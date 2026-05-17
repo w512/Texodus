@@ -1,0 +1,38 @@
+{
+  "name": "texodus",
+  "private": true,
+  "version": "0.5.2",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@fontsource/google-sans-code": "^5.2.4",
+    "@fontsource/inter": "^5.2.8",
+    "@fontsource/iosevka": "^5.2.5",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@fontsource/roboto": "^5.2.10",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/plugin-fs": "^2.5.1",
+    "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-shell": "^2.3.5",
+    "@types/dompurify": "^3.0.5",
+    "dompurify": "^3.4.3",
+    "marked": "^18.0.3",
+    "pinia": "^3.0.4",
+    "prismjs": "^1.30.0",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "typescript": "^6.0.3",
+    "vite": "^6.0.3",
+    "vue-tsc": "^3.2.9"
+  }
+}
