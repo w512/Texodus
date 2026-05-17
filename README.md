@@ -72,12 +72,15 @@ bun run tauri build
 ## 🏗️ Project Structure
 
 -   `src/`: Vue.js frontend source code.
+    -   `assets/`: App icons and static assets.
     -   `components/`: Reusable Vue components.
-    -   `stores/`: Pinia state management.
     -   `composables/`: Shared logic and native integrations.
     -   `services/`: Core application services (File I/O).
+    -   `stores/`: Pinia state management.
 -   `src-tauri/`: Rust backend and Tauri configuration.
 -   `docs/`: Project documentation and development plans.
+-   `screenshots/`: Application screenshots for documentation.
+
 
 ## 📄 License
 
