@@ -2,6 +2,7 @@
 
 Texodus is a modern, fast, and beautiful Markdown editor built with **Tauri 2** and **Vue 3**. Designed for performance and a premium user experience, it combines the power of Rust with the flexibility of modern web technologies to provide a native-feeling desktop writing environment.
 
+![Texodus Editor Preview](screenshots/Screenshot_01.png)
 
 ## ✨ Features
 
@@ -15,6 +16,17 @@ Texodus is a modern, fast, and beautiful Markdown editor built with **Tauri 2** 
     -   Window state persistence (remembers size and position).
     -   Unsaved changes protection.
 -   **Secure & Fast**: Built on Tauri 2 with a strict CSP and local-first philosophy.
+
+## 📸 Gallery
+
+### Preview Only Mode (light theme)
+![Preview Only Mode](screenshots/Screenshot_01.png)
+
+### Preview Only Mode (dark theme)
+![Preview Only Mode](screenshots/Screenshot_02.png)
+
+### Split View Mode
+![Split View](screenshots/Screenshot_03.png)
 
 ## 🛠️ Tech Stack
 
