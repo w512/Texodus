@@ -78,7 +78,6 @@ bun run tauri build
     -   `services/`: Core application services (File I/O).
     -   `stores/`: Pinia state management.
 -   `src-tauri/`: Rust backend and Tauri configuration.
--   `docs/`: Project documentation and development plans.
 -   `screenshots/`: Application screenshots for documentation.
 
 
