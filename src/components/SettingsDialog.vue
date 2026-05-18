@@ -57,6 +57,18 @@
             </div>
           </div>
 
+          <div class="settings-preview">
+            <span class="section-label">Fonts preview</span>
+            <div class="fonts-preview">
+              <div class="sample" :style="{ fontFamily: settingsStore.editorFont, fontSize: settingsStore.fontSize + 'px' }">
+                <strong>Editor:</strong> const greet = () =&gt; "Hello, world";
+              </div>
+              <div class="sample" :style="{ fontFamily: settingsStore.previewFont, fontSize: settingsStore.fontSize + 'px' }">
+                <strong>Preview:</strong> The quick brown fox jumps over the lazy dog.
+              </div>
+            </div>
+          </div>
+
           <div class="settings-section">
             <span class="section-label">Color scheme</span>
             <div class="scheme-grid">
@@ -80,15 +92,6 @@
                 <div class="swatch-accent"></div>
                 <span class="swatch-name">{{ scheme.label }}</span>
               </button>
-            </div>
-          </div>
-
-          <div class="settings-preview">
-            <div class="sample" :style="{ fontFamily: settingsStore.editorFont, fontSize: settingsStore.fontSize + 'px' }">
-              Editor: const greet = () =&gt; "Hello, world";
-            </div>
-            <div class="sample" :style="{ fontFamily: settingsStore.previewFont, fontSize: settingsStore.fontSize + 'px' }">
-              Preview: The quick brown fox jumps over the lazy dog.
             </div>
           </div>
         </div>
@@ -288,12 +291,37 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
   border-top: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.5rem;
 }
 
-.sample {
+.fonts-preview {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 0.85rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-top: 0.25rem;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.03);
+}
+
+.fonts-preview .sample {
   color: var(--text-color);
   line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.fonts-preview .sample strong {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.6875rem !important;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-color);
+  font-weight: 600;
+  opacity: 0.9;
 }
 
 .settings-section {
