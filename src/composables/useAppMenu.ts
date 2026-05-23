@@ -1,4 +1,5 @@
 import { Menu, Submenu, MenuItem, PredefinedMenuItem } from '@tauri-apps/api/menu';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { openFile, saveFile, saveFileAs, newFile, loadFileFromPath, closeFile } from '../services/fileService';
 import { exportPdf, exportHtml, exportTxt } from "../services/exportService";
 import type { useEditorStore } from '../stores/editor';
@@ -10,6 +11,10 @@ type EditorStore = ReturnType<typeof useEditorStore>;
 // (About / Hide / Quit) first; Windows/Linux render the menu in the window's
 // own bar and have no such submenu.
 const isMac = navigator.userAgent.includes('Macintosh');
+
+// Keep a global reference to prevent the menu (and its JS callbacks)
+// from being garbage collected by V8, which breaks menu actions on Windows.
+let activeMenu: Menu | null = null;
 
 /**
  * Builds and installs the native application menu.
@@ -112,7 +117,7 @@ export async function setupAppMenu(store: EditorStore): Promise<void> {
 
   if (!isMac) {
     fileItems.push(await PredefinedMenuItem.new({ item: 'Separator' }));
-    fileItems.push(await PredefinedMenuItem.new({ item: 'CloseWindow', text: 'Exit' }));
+    fileItems.push(await PredefinedMenuItem.new({ item: 'Quit', text: 'Exit' }));
   }
 
   const fileSubmenu = await Submenu.new({ text: 'File', items: fileItems });
@@ -166,5 +171,16 @@ export async function setupAppMenu(store: EditorStore): Promise<void> {
   submenus.push(fileSubmenu, editSubmenu, helpSubmenu);
 
   const menu = await Menu.new({ items: submenus });
-  await menu.setAsAppMenu();
+  activeMenu = menu; // Prevent GC
+
+  if (isMac) {
+    await menu.setAsAppMenu();
+  } else {
+    try {
+      await menu.setAsWindowMenu(getCurrentWindow());
+    } catch (e) {
+      // Fallback if setAsWindowMenu fails
+      await menu.setAsAppMenu();
+    }
+  }
 }
