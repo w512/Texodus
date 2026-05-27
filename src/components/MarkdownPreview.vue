@@ -46,7 +46,65 @@ const renderMarkdown = async () => {
   previewRef.value.innerHTML = clean;
 
   await nextTick();
-  // Lazy load Prism only when there are code blocks (§6.2)
+
+  // Lazy load Mermaid only when there are mermaid blocks
+  const mermaidBlocks = previewRef.value.querySelectorAll('pre code.language-mermaid');
+  if (mermaidBlocks.length > 0) {
+    try {
+      const mermaidModule = await import('mermaid');
+      const mermaid = mermaidModule.default || mermaidModule;
+      
+      const isDark = previewRef.value.closest('.theme-root')?.classList.contains('dark') || 
+                     document.body.classList.contains('dark') || 
+                     document.documentElement.classList.contains('dark');
+      
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: isDark ? 'dark' : 'default',
+        securityLevel: 'loose',
+      });
+
+      for (let i = 0; i < mermaidBlocks.length; i++) {
+        const block = mermaidBlocks[i];
+        const codeText = block.textContent || '';
+        const pre = block.parentElement;
+        if (!pre) continue;
+
+        const id = `mermaid-preview-${Date.now()}-${i}`;
+        try {
+          const { svg } = await mermaid.render(id, codeText);
+          const container = document.createElement('div');
+          container.className = 'mermaid-preview-container';
+          container.innerHTML = svg;
+          pre.replaceWith(container);
+        } catch (err) {
+          console.error('Mermaid render error:', err);
+          
+          const errorContainer = document.createElement('div');
+          errorContainer.className = 'mermaid-error-container';
+          
+          const errorTitle = document.createElement('div');
+          errorTitle.className = 'mermaid-error-title';
+          errorTitle.textContent = 'Mermaid Rendering Error';
+          errorContainer.appendChild(errorTitle);
+
+          const errorText = document.createElement('pre');
+          errorText.className = 'mermaid-error-text';
+          errorText.textContent = err.message || String(err);
+          errorContainer.appendChild(errorText);
+
+          pre.replaceWith(errorContainer);
+          
+          const tempEl = document.getElementById(id);
+          if (tempEl) tempEl.remove();
+        }
+      }
+    } catch (importErr) {
+      console.error('Failed to load or run Mermaid:', importErr);
+    }
+  }
+
+  // Lazy load Prism only when there are remaining code blocks (§6.2)
   if (previewRef.value.querySelector('pre code')) {
     const Prism = await import('prismjs');
     await import('../themes/prism.css');
@@ -61,6 +119,14 @@ watch(
     renderTimer = setTimeout(renderMarkdown, DEBOUNCE_MS);
   },
   { immediate: true }
+);
+
+watch(
+  [() => settingsStore.themeMode, () => settingsStore.colorScheme],
+  () => {
+    clearTimeout(renderTimer);
+    renderTimer = setTimeout(renderMarkdown, DEBOUNCE_MS);
+  }
 );
 
 const toggleMarkdownCheckbox = (index) => {
@@ -136,11 +202,25 @@ const handleScroll = (e) => {
   scrollHideTimer = setTimeout(() => el.classList.remove('is-scrolling'), SCROLL_HIDE_DELAY);
 };
 
-onMounted(() => setPreviewElement(previewRef.value));
+let themeMediaQuery = null;
+const handleSystemThemeChange = () => {
+  if (settingsStore.themeMode === 'system') {
+    clearTimeout(renderTimer);
+    renderTimer = setTimeout(renderMarkdown, DEBOUNCE_MS);
+  }
+};
+
+onMounted(() => {
+  setPreviewElement(previewRef.value);
+  themeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  themeMediaQuery.addEventListener('change', handleSystemThemeChange);
+});
+
 onUnmounted(() => {
   clearTimeout(renderTimer);
   clearTimeout(scrollHideTimer);
   setPreviewElement(null);
+  themeMediaQuery?.removeEventListener('change', handleSystemThemeChange);
 });
 </script>
 
@@ -257,5 +337,60 @@ onUnmounted(() => {
   cursor: pointer;
   accent-color: var(--accent-color);
   vertical-align: middle;
+}
+
+/* ── Mermaid Diagrams ───────────────────────────────────────── */
+:deep(.mermaid-preview-container) {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin: 1.5em 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow-x: auto;
+}
+
+:deep(.mermaid-preview-container svg) {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+:deep(.mermaid-error-container) {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin: 1.5em 0;
+  color: var(--text-color);
+  font-family: inherit;
+}
+
+:deep(.mermaid-error-title) {
+  font-weight: 600;
+  color: #ef4444;
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+:deep(.mermaid-error-text) {
+  margin: 0;
+  padding: 0.75rem;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 6px;
+  font-family: var(--editor-font, monospace);
+  font-size: 0.8125rem;
+  color: var(--text-color);
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+.theme-root.dark :deep(.mermaid-error-text) {
+  background: rgba(0, 0, 0, 0.2);
 }
 </style>

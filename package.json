@@ -1,7 +1,7 @@
 {
   "name": "texodus",
   "private": true,
-  "version": "0.6.5",
+  "version": "0.7.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -24,6 +24,7 @@
     "@types/dompurify": "^3.0.5",
     "dompurify": "^3.4.3",
     "marked": "^18.0.3",
+    "mermaid": "^11.15.0",
     "pdfmake": "^0.3.8",
     "pinia": "^3.0.4",
     "prismjs": "^1.30.0",

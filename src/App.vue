@@ -82,7 +82,16 @@ const windowTitle = computed(() => {
 
 watch(
   [() => editorStore.filePath, () => editorStore.isDirty],
-  () => updateWindowTitle(editorStore),
+  () => {
+    void updateWindowTitle(editorStore);
+    // Report window status to Rust
+    void invoke('report_window_status', {
+      path: editorStore.filePath,
+      isDirty: editorStore.isDirty
+    }).catch((e) => {
+      console.warn('Failed to report window status:', e);
+    });
+  },
   { immediate: true }
 );
 
@@ -91,6 +100,7 @@ watch(
 let unlistenClose = null;
 let unlistenDrop = null;
 let unlistenFileOpen = null;
+let unlistenFocus = null;
 
 // Drains the Rust-side pending-file slot. Used both at mount (to pick up a
 // path that arrived before we could listen) and on every `open-file-pending`
@@ -130,6 +140,21 @@ onMounted(async () => {
   }
 
   try {
+    const win = getCurrentWindow();
+    unlistenFocus = await win.onFocusChanged(async ({ payload: focused }) => {
+      if (focused) {
+        try {
+          await setupAppMenu(editorStore);
+        } catch (e) {
+          console.warn('Native menu setup on focus failed:', e);
+        }
+      }
+    });
+  } catch (e) {
+    console.warn('onFocusChanged not available:', e);
+  }
+
+  try {
     const webview = getCurrentWebview();
     unlistenDrop = await webview.onDragDropEvent(async (event) => {
       if (event.payload.type !== 'drop') return;
@@ -158,6 +183,7 @@ onUnmounted(() => {
   unlistenClose?.();
   unlistenDrop?.();
   unlistenFileOpen?.();
+  unlistenFocus?.();
 });
 </script>
 

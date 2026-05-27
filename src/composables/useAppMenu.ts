@@ -1,9 +1,13 @@
 import { Menu, Submenu, MenuItem, PredefinedMenuItem } from '@tauri-apps/api/menu';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { open as showOpenDialog } from '@tauri-apps/plugin-dialog';
 import { openFile, saveFile, saveFileAs, newFile, loadFileFromPath, closeFile } from '../services/fileService';
 import { exportPdf, exportHtml, exportTxt } from "../services/exportService";
 import type { useEditorStore } from '../stores/editor';
 import { useSettingsStore } from '../stores/settings';
+import { invoke } from '@tauri-apps/api/core';
+
+const FILE_FILTERS = [{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }];
 
 type EditorStore = ReturnType<typeof useEditorStore>;
 
@@ -45,7 +49,13 @@ export async function setupAppMenu(store: EditorStore): Promise<void> {
       recentMenuItems.push(await MenuItem.new({
         id: `recent-${i}`,
         text: label,
-        action: () => { void loadFileFromPath(store, filePath); },
+        action: () => {
+          if (store.filePath || store.isDirty) {
+            void invoke('open_new_window', { path: filePath });
+          } else {
+            void loadFileFromPath(store, filePath);
+          }
+        },
       }));
     }
     recentMenuItems.push(await PredefinedMenuItem.new({ item: 'Separator' }));
@@ -64,15 +74,24 @@ export async function setupAppMenu(store: EditorStore): Promise<void> {
   const fileItems = [
     await MenuItem.new({
       id: 'file-new',
-      text: 'New',
+      text: 'New Window',
       accelerator: 'CmdOrCtrl+N',
-      action: () => { void newFile(store); },
+      action: () => { void invoke('open_new_window'); },
     }),
     await MenuItem.new({
       id: 'file-open',
       text: 'Open…',
       accelerator: 'CmdOrCtrl+O',
-      action: () => { void openFile(store); },
+      action: async () => {
+        if (store.filePath || store.isDirty) {
+          // Current window has content — pick file, then open in new window
+          const selected = await showOpenDialog({ multiple: false, filters: FILE_FILTERS });
+          if (!selected) return;
+          void invoke('open_new_window', { path: selected as string });
+        } else {
+          void openFile(store);
+        }
+      },
     }),
     openRecentSubmenu,
     await MenuItem.new({
