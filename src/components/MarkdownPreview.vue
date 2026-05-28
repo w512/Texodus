@@ -16,6 +16,8 @@ import { useMarkdownPreview } from '../composables/useMarkdownPreview';
 import { sanitizeMarkdownHtml } from '../services/markdownSanitizer';
 import { renderMermaidBlocks } from '../services/mermaidRenderer';
 import { marked, type Token } from 'marked';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import { dirname, hasUrlScheme, isAbsolutePath, resolveLocalPath } from '../utils/path';
 
 const editorStore = useEditorStore();
 const settingsStore = useSettingsStore();
@@ -62,6 +64,22 @@ function attachLineAnchors(container: HTMLElement, lines: number[]) {
   }
 }
 
+// Rewrite local `<img>` sources (relative paths or absolute filesystem paths)
+// into Tauri asset-protocol URLs so the webview can actually load them under
+// the CSP. Relative paths resolve against the open file's directory; if no
+// file is open we skip the rewrite and the image will fail to load until the
+// user saves the document.
+function rewriteLocalImages(container: HTMLElement, filePath: string | null) {
+  const baseDir = filePath ? dirname(filePath) : '';
+  for (const img of Array.from(container.querySelectorAll('img'))) {
+    const src = img.getAttribute('src');
+    if (!src || hasUrlScheme(src)) continue;
+    if (!isAbsolutePath(src) && !baseDir) continue;
+    const abs = resolveLocalPath(baseDir, src);
+    img.src = convertFileSrc(abs);
+  }
+}
+
 const renderMarkdown = async () => {
   if (!previewRef.value) return;
 
@@ -76,6 +94,7 @@ const renderMarkdown = async () => {
   if (htmlChanged) {
     lastRenderedHtml = clean;
     previewRef.value.innerHTML = clean;
+    rewriteLocalImages(previewRef.value, editorStore.filePath);
   }
 
   await nextTick();
@@ -113,6 +132,17 @@ watch(
     // Theme switch: drop the HTML cache so we re-emit the raw mermaid
     // `<pre>` blocks and let renderMermaidBlocks re-render them with the
     // new theme. Without this the previous run's themed SVGs would persist.
+    lastRenderedHtml = '';
+    if (renderTimer) clearTimeout(renderTimer);
+    renderTimer = setTimeout(renderMarkdown, DEBOUNCE_MS);
+  }
+);
+
+// File path change ⇒ relative image paths resolve against a new base dir.
+// Drop the cache so rewriteLocalImages runs again with the new dirname.
+watch(
+  () => editorStore.filePath,
+  () => {
     lastRenderedHtml = '';
     if (renderTimer) clearTimeout(renderTimer);
     renderTimer = setTimeout(renderMarkdown, DEBOUNCE_MS);

@@ -1,6 +1,6 @@
 [package]
 name = "texodus"
-version = "1.0.0"
+version = "1.0.1"
 description = "Texodus is a modern, fast, and beautiful Markdown viewer and editor"
 authors = ["Nick"]
 edition = "2021"
@@ -18,7 +18,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
