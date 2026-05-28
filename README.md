@@ -6,16 +6,23 @@ Texodus is a modern, fast, and beautiful Markdown editor built with **Tauri 2** 
 
 ## ✨ Features
 
--   **Live Markdown Preview**: Real-time rendering with debounced updates and support for the **GitHub Flavored Markdown (GFM)** standard (including tables, strikethrough, and autolinks).
--   **Dynamic Layouts**: Switch between **Split View**, **Focus Mode** (Editor only), and **Preview Only** modes.
--   **Premium Aesthetics**: Native-feeling UI with support for **Dark/Light modes** and smooth transitions.
--   **Custom Typography**: Choose from curated fonts like *Inter*, *JetBrains Mono*, and *Roboto* for both editor and preview.
--   **Native Integration**: 
+-   **CodeMirror 6 Editor**: Modern editing experience with markdown syntax highlighting, smart indentation, and large-document performance.
+-   **Live Markdown Preview**: Real-time, debounced rendering with full **GitHub Flavored Markdown (GFM)** support — tables, strikethrough, autolinks, and interactive task list checkboxes you can toggle directly in the preview.
+-   **Mermaid Diagrams**: Render flowcharts, sequence diagrams, and other Mermaid graph types inline in the preview, themed to match the active color scheme.
+-   **Local Images**: Embed images with relative (`![](images/foo.png)`) or absolute filesystem paths — resolved against the open document's directory via Tauri's asset protocol.
+-   **Export**: Save the current document as standalone HTML or PDF.
+-   **Multi-Window**: Open multiple documents in separate native windows.
+-   **Dynamic Layouts**: Switch between **Split View**, **Focus Mode** (editor only), and **Preview Only** modes.
+-   **10 Color Schemes**: Default, Solarized, Nord, Monokai, Dracula, GitHub, Catppuccin, Gruvbox, Everforest, and Matrix — each with light and dark variants.
+-   **Document Statistics**: Live word / character / line counts and reading-time estimates.
+-   **Custom Typography**: Curated editor and preview fonts (JetBrains Mono, Iosevka, Inter, Roboto, Merriweather, …), all bundled locally — no network fonts.
+-   **Native Integration**:
     -   Full system menu support with keyboard accelerators.
+    -   Open Recent submenu in the File menu.
     -   Drag-and-drop file support.
-    -   Window state persistence (remembers size and position).
+    -   Window state persistence (remembers size, position, and maximized state).
     -   Unsaved changes protection.
--   **Secure & Fast**: Built on Tauri 2 with a strict CSP and local-first philosophy.
+-   **Secure & Fast**: Built on Tauri 2 with a strict CSP and a local-first philosophy — no telemetry, no cloud.
 
 ## 📸 Gallery
 
@@ -29,9 +36,11 @@ Texodus is a modern, fast, and beautiful Markdown editor built with **Tauri 2** 
 
 -   **Core**: [Tauri 2](https://v2.tauri.app/) (Rust)
 -   **Frontend**: [Vue 3](https://vuejs.org/) (Composition API) + [Vite](https://vitejs.dev/)
+-   **Editor**: [CodeMirror 6](https://codemirror.net/)
 -   **State**: [Pinia](https://pinia.vuejs.org/)
 -   **Markdown**: [marked.js](https://marked.js.org/) compliant with the **GitHub Flavored Markdown (GFM)** specification, with [DOMPurify](https://github.com/cure53/dompurify) for sanitization.
--   **Syntax Highlighting**: [Prism.js](https://prismjs.com/)
+-   **Diagrams**: [Mermaid](https://mermaid.js.org/)
+-   **Syntax Highlighting**: [Prism.js](https://prismjs.com/) (preview code blocks)
 -   **Styling**: Vanilla CSS (no frameworks) with CSS variables for theming.
 -   **Package Manager**: [Bun](https://bun.sh/) (recommended)
 
@@ -69,14 +78,18 @@ To create a production-ready installer for your current platform:
 bun run tauri build
 ```
 
+Linux builds produce `.deb`, `.AppImage`, and `.rpm` packages; macOS produces `.dmg` and `.app`; Windows produces an NSIS installer.
+
 ## 🏗️ Project Structure
 
 -   `src/`: Vue.js frontend source code.
     -   `assets/`: App icons and static assets.
     -   `components/`: Reusable Vue components.
-    -   `composables/`: Shared logic and native integrations.
-    -   `services/`: Core application services (File I/O).
-    -   `stores/`: Pinia state management.
+    -   `composables/`: Shared logic (CodeMirror, native menus, formatting, scroll sync).
+    -   `services/`: Core application services (file I/O, export, Mermaid, sanitization).
+    -   `stores/`: Pinia state management (editor + settings).
+    -   `themes/`: Color scheme definitions and Prism stylesheet.
+    -   `utils/`: Path helpers and other small utilities.
 -   `src-tauri/`: Rust backend and Tauri configuration.
 -   `screenshots/`: Application screenshots for documentation.
 
