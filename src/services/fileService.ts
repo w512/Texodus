@@ -4,6 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useEditorStore } from '../stores/editor';
 import { useSettingsStore } from '../stores/settings';
 import { promptUnsavedChanges } from '../composables/useUnsavedPrompt';
+import { basename } from '../utils/path';
 
 const FILE_FILTERS =[{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }];
 
@@ -103,7 +104,7 @@ export async function closeFile(store: EditorStore): Promise<void> {
 export async function updateWindowTitle(store: EditorStore): Promise<void> {
   try {
     const win = getCurrentWindow();
-    const fileName = store.filePath ? store.filePath.split(/[\\/]/).pop() : 'Untitled';
+    const fileName = store.filePath ? basename(store.filePath) : 'Untitled';
     const dirtyMark = store.isDirty ? '* ' : '';
     await win.setTitle(`${dirtyMark}${fileName}`);
   } catch {

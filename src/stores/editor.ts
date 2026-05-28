@@ -4,7 +4,6 @@ interface EditorState {
   content: string;
   filePath: string | null;
   isDirty: boolean;
-  aboutVisible: boolean;
 }
 
 export const useEditorStore = defineStore('editor', {
@@ -12,7 +11,6 @@ export const useEditorStore = defineStore('editor', {
     content: '',
     filePath: null,
     isDirty: false,
-    aboutVisible: false,
   }),
   actions: {
     updateContent(newContent: string) {
@@ -25,9 +23,6 @@ export const useEditorStore = defineStore('editor', {
     },
     setDirty(dirty: boolean) {
       this.isDirty = dirty;
-    },
-    setAboutVisible(visible: boolean) {
-      this.aboutVisible = visible;
     },
     loadFile(content: string, path: string | null) {
       this.content = content;

@@ -46,11 +46,14 @@ defineProps({
   transition: background 0.25s;
 }
 
-/* Centered single-panel modes */
-.editor-container.preview .preview-pane,
-.editor-container.focus .editor-pane {
-  max-width: 780px;
-  margin: 0 auto;
+/* Single-pane modes: pane spans the full window so the scroll container
+   covers the entire surface (otherwise the side gutters swallow scroll
+   events). Content is centered visually via dynamic horizontal padding on
+   the inner scrollable element, not via constraining the outer pane. */
+.editor-container.preview .preview-pane :deep(.preview-content),
+.editor-container.focus .editor-pane :deep(.cm-scroller) {
+  padding-left: max(2.5rem, calc((100% - 780px) / 2));
+  padding-right: max(2.5rem, calc((100% - 780px) / 2));
 }
 
 /* ── Panel transition (§2.3) ── */

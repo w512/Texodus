@@ -6,6 +6,7 @@ import { exportPdf, exportHtml, exportTxt } from "../services/exportService";
 import type { useEditorStore } from '../stores/editor';
 import { useSettingsStore } from '../stores/settings';
 import { invoke } from '@tauri-apps/api/core';
+import { basename } from '../utils/path';
 
 const FILE_FILTERS = [{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }];
 
@@ -44,8 +45,8 @@ export async function setupAppMenu(store: EditorStore): Promise<void> {
       const filePath = settingsStore.recentFiles[i];
       const parts = filePath.split(/[\\/]/);
       const label = parts.length >= 2
-        ? `${parts[parts.length - 1]}  —  ${parts[parts.length - 2]}`
-        : parts[parts.length - 1];
+        ? `${basename(filePath)}  —  ${parts[parts.length - 2]}`
+        : basename(filePath);
       recentMenuItems.push(await MenuItem.new({
         id: `recent-${i}`,
         text: label,
@@ -160,7 +161,7 @@ export async function setupAppMenu(store: EditorStore): Promise<void> {
       await MenuItem.new({
         id: 'help-about',
         text: isMac ? 'About Texodus' : 'About',
-        action: () => { store.setAboutVisible(true); },
+        action: () => { settingsStore.setAboutVisible(true); },
       }),
     ],
   });
@@ -173,7 +174,7 @@ export async function setupAppMenu(store: EditorStore): Promise<void> {
         await MenuItem.new({
           id: 'app-about',
           text: 'About Texodus',
-          action: () => { store.setAboutVisible(true); },
+          action: () => { settingsStore.setAboutVisible(true); },
         }),
         await PredefinedMenuItem.new({ item: 'Separator' }),
         await PredefinedMenuItem.new({ item: 'Services' }),

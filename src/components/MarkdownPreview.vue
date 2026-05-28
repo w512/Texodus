@@ -8,100 +8,86 @@
   ></div>
 </template>
 
-<script setup>
-import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue';
+<script setup lang="ts">
+import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue';
 import { useEditorStore } from '../stores/editor';
 import { useSettingsStore } from '../stores/settings';
 import { useMarkdownPreview } from '../composables/useMarkdownPreview';
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
+import { sanitizeMarkdownHtml } from '../services/markdownSanitizer';
+import { renderMermaidBlocks } from '../services/mermaidRenderer';
+import { marked, type Token } from 'marked';
 
 const editorStore = useEditorStore();
 const settingsStore = useSettingsStore();
 const { setPreviewElement, syncFromPreview } = useMarkdownPreview();
-const previewRef = ref(null);
-
-// Configure marked
-marked.setOptions({ breaks: true, gfm: true });
+const previewRef = ref<HTMLElement | null>(null);
 
 // Debounce rendering (§6.2)
-let renderTimer = null;
+let renderTimer: ReturnType<typeof setTimeout> | null = null;
 const DEBOUNCE_MS = 120;
+
+// Cached last-rendered HTML — lets us skip a DOM thrash on theme/color-scheme
+// changes (which re-trigger render but produce identical HTML for non-mermaid
+// docs), avoiding flicker and preserving selection.
+let lastRenderedHtml = '';
+
+const isDarkPreview = computed(() => {
+  if (settingsStore.themeMode === 'dark') return true;
+  if (settingsStore.themeMode === 'light') return false;
+  // 'system' — fall back to OS preference
+  return typeof window !== 'undefined'
+    && window.matchMedia?.('(prefers-color-scheme: dark)').matches === true;
+});
+
+// Walks block-level tokens and records the 0-indexed source line each block
+// starts at. Used to attach `data-source-line` anchors for the line-based
+// scroll sync. `space` tokens don't produce DOM output, so we skip them.
+function collectBlockLines(tokens: Token[]): number[] {
+  const lines: number[] = [];
+  let line = 0;
+  for (const token of tokens) {
+    if (token.type !== 'space') lines.push(line);
+    const raw = (token as { raw?: string }).raw ?? '';
+    for (const c of raw) if (c === '\n') line++;
+  }
+  return lines;
+}
+
+function attachLineAnchors(container: HTMLElement, lines: number[]) {
+  let i = 0;
+  for (const child of Array.from(container.children) as HTMLElement[]) {
+    if (i >= lines.length) break;
+    child.dataset.sourceLine = String(lines[i]);
+    i++;
+  }
+}
 
 const renderMarkdown = async () => {
   if (!previewRef.value) return;
-  const raw = await marked.parse(editorStore.content);
-  // Sanitize to prevent XSS (§3.2). External links open via shell.open,
-  // so 'target' is unnecessary; 'rel' is allowed for safe attribution.
-  const clean = DOMPurify.sanitize(raw, {
-    ALLOWED_TAGS: [
-      'h1','h2','h3','h4','h5','h6','p','br','hr',
-      'ul','ol','li','blockquote','pre','code',
-      'strong','em','del','a','img','table','thead',
-      'tbody','tr','th','td','sup','sub','span','div',
-      'input',
-    ],
-    ALLOWED_ATTR: ['href','src','alt','title','class','id','rel','type','checked'],
-  });
-  previewRef.value.innerHTML = clean;
+
+  // Lex first so we can record per-block source line numbers, then parse the
+  // already-tokenised tree (avoids tokenising twice via marked.parse).
+  const tokens = marked.lexer(editorStore.content);
+  const blockLines = collectBlockLines(tokens);
+  const html = marked.parser(tokens) as string;
+  const clean = sanitizeMarkdownHtml(html);
+
+  const htmlChanged = clean !== lastRenderedHtml;
+  if (htmlChanged) {
+    lastRenderedHtml = clean;
+    previewRef.value.innerHTML = clean;
+  }
 
   await nextTick();
 
-  // Lazy load Mermaid only when there are mermaid blocks
-  const mermaidBlocks = previewRef.value.querySelectorAll('pre code.language-mermaid');
-  if (mermaidBlocks.length > 0) {
-    try {
-      const mermaidModule = await import('mermaid');
-      const mermaid = mermaidModule.default || mermaidModule;
-      
-      const isDark = previewRef.value.closest('.theme-root')?.classList.contains('dark') || 
-                     document.body.classList.contains('dark') || 
-                     document.documentElement.classList.contains('dark');
-      
-      mermaid.initialize({
-        startOnLoad: false,
-        theme: isDark ? 'dark' : 'default',
-        securityLevel: 'loose',
-      });
+  // Mermaid replaces matching `<pre>` blocks with new `<div>`s — attach line
+  // anchors AFTER so the replacements get the data attribute too.
+  await renderMermaidBlocks(previewRef.value, {
+    theme: isDarkPreview.value ? 'dark' : 'default',
+  });
 
-      for (let i = 0; i < mermaidBlocks.length; i++) {
-        const block = mermaidBlocks[i];
-        const codeText = block.textContent || '';
-        const pre = block.parentElement;
-        if (!pre) continue;
-
-        const id = `mermaid-preview-${Date.now()}-${i}`;
-        try {
-          const { svg } = await mermaid.render(id, codeText);
-          const container = document.createElement('div');
-          container.className = 'mermaid-preview-container';
-          container.innerHTML = svg;
-          pre.replaceWith(container);
-        } catch (err) {
-          console.error('Mermaid render error:', err);
-          
-          const errorContainer = document.createElement('div');
-          errorContainer.className = 'mermaid-error-container';
-          
-          const errorTitle = document.createElement('div');
-          errorTitle.className = 'mermaid-error-title';
-          errorTitle.textContent = 'Mermaid Rendering Error';
-          errorContainer.appendChild(errorTitle);
-
-          const errorText = document.createElement('pre');
-          errorText.className = 'mermaid-error-text';
-          errorText.textContent = err.message || String(err);
-          errorContainer.appendChild(errorText);
-
-          pre.replaceWith(errorContainer);
-          
-          const tempEl = document.getElementById(id);
-          if (tempEl) tempEl.remove();
-        }
-      }
-    } catch (importErr) {
-      console.error('Failed to load or run Mermaid:', importErr);
-    }
+  if (htmlChanged) {
+    attachLineAnchors(previewRef.value, blockLines);
   }
 
   // Lazy load Prism only when there are remaining code blocks (§6.2)
@@ -115,7 +101,7 @@ const renderMarkdown = async () => {
 watch(
   () => editorStore.content,
   () => {
-    clearTimeout(renderTimer);
+    if (renderTimer) clearTimeout(renderTimer);
     renderTimer = setTimeout(renderMarkdown, DEBOUNCE_MS);
   },
   { immediate: true }
@@ -124,22 +110,29 @@ watch(
 watch(
   [() => settingsStore.themeMode, () => settingsStore.colorScheme],
   () => {
-    clearTimeout(renderTimer);
+    // Theme switch: drop the HTML cache so we re-emit the raw mermaid
+    // `<pre>` blocks and let renderMermaidBlocks re-render them with the
+    // new theme. Without this the previous run's themed SVGs would persist.
+    lastRenderedHtml = '';
+    if (renderTimer) clearTimeout(renderTimer);
     renderTimer = setTimeout(renderMarkdown, DEBOUNCE_MS);
   }
 );
 
-const toggleMarkdownCheckbox = (index) => {
+const toggleMarkdownCheckbox = (index: number) => {
   const original = editorStore.content;
-  
-  // Mask fenced code blocks to prevent matching checkboxes in them
-  const masked = original.replace(/```[\s\S]*?```/g, (m) => ' '.repeat(m.length));
-  
+
+  // Mask fenced code blocks AND inline code spans so checkboxes that happen
+  // to appear inside `\`- [ ]\`` or fenced blocks aren't miscounted.
+  const masked = original
+    .replace(/```[\s\S]*?```/g, (m) => ' '.repeat(m.length))
+    .replace(/`[^`\n]*`/g, (m) => ' '.repeat(m.length));
+
   // Regex to match markdown task list checkboxes: e.g., - [ ] or * [x]
   // Matches list items starting with list markers (optionally inside blockquotes)
   const checkboxRegex = /^[>\s]*([-*+]|\d+[.)])\s+(\[[ xX]\])/mg;
-  
-  let match;
+
+  let match: RegExpExecArray | null;
   let count = 0;
   let foundStart = -1;
   let isChecked = false;
@@ -165,12 +158,17 @@ const toggleMarkdownCheckbox = (index) => {
 };
 
 // Intercept clicks in the preview (external links and checkboxes)
-const handleLinkClick = async (e) => {
+const handleLinkClick = async (e: MouseEvent) => {
+  const target = e.target as HTMLElement | null;
+  if (!target || !previewRef.value) return;
+
   // 1. Handle task list checkbox click
-  if (e.target.tagName === 'INPUT' && e.target.type === 'checkbox') {
+  if (target instanceof HTMLInputElement && target.type === 'checkbox') {
     e.preventDefault(); // Prevent visual toggle desync
-    const checkboxes = Array.from(previewRef.value.querySelectorAll('input[type="checkbox"]'));
-    const index = checkboxes.indexOf(e.target);
+    const checkboxes = Array.from(
+      previewRef.value.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+    );
+    const index = checkboxes.indexOf(target);
     if (index !== -1) {
       toggleMarkdownCheckbox(index);
     }
@@ -178,7 +176,7 @@ const handleLinkClick = async (e) => {
   }
 
   // 2. Handle external link clicks (§3.2)
-  const anchor = e.target.closest('a[href]');
+  const anchor = target.closest('a[href]');
   if (!anchor) return;
   const href = anchor.getAttribute('href');
   if (!href || href.startsWith('#')) return; // allow in-page anchors
@@ -193,19 +191,20 @@ const handleLinkClick = async (e) => {
 };
 
 const SCROLL_HIDE_DELAY = 1200;
-let scrollHideTimer = null;
-const handleScroll = (e) => {
+let scrollHideTimer: ReturnType<typeof setTimeout> | null = null;
+const handleScroll = (e: Event) => {
   syncFromPreview();
-  const el = e.currentTarget;
+  const el = e.currentTarget as HTMLElement;
   el.classList.add('is-scrolling');
-  clearTimeout(scrollHideTimer);
+  if (scrollHideTimer) clearTimeout(scrollHideTimer);
   scrollHideTimer = setTimeout(() => el.classList.remove('is-scrolling'), SCROLL_HIDE_DELAY);
 };
 
-let themeMediaQuery = null;
+let themeMediaQuery: MediaQueryList | null = null;
 const handleSystemThemeChange = () => {
   if (settingsStore.themeMode === 'system') {
-    clearTimeout(renderTimer);
+    lastRenderedHtml = '';
+    if (renderTimer) clearTimeout(renderTimer);
     renderTimer = setTimeout(renderMarkdown, DEBOUNCE_MS);
   }
 };
@@ -217,8 +216,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  clearTimeout(renderTimer);
-  clearTimeout(scrollHideTimer);
+  if (renderTimer) clearTimeout(renderTimer);
+  if (scrollHideTimer) clearTimeout(scrollHideTimer);
   setPreviewElement(null);
   themeMediaQuery?.removeEventListener('change', handleSystemThemeChange);
 });
@@ -233,6 +232,9 @@ onUnmounted(() => {
   box-sizing: border-box;
   overflow-y: auto;
   transition: color 0.2s;
+  /* position: relative makes `child.offsetTop` measure against this element
+     (and `scrollTop`), which the line-anchor scroll sync depends on. */
+  position: relative;
 }
 
 /* ── Markdown typography ──────────────────────────────────────── */

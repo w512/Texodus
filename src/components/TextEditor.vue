@@ -1,83 +1,106 @@
 <template>
-  <textarea
-    ref="editorRef"
-    :value="editorStore.content"
-    @input="handleInput"
-    @keydown="handleKeydown"
-    @scroll="handleScroll"
-    class="editor-textarea"
-    :style="{ fontFamily: settingsStore.editorFont, fontSize: settingsStore.fontSize + 'px' }"
-    :spellcheck="false"
-    placeholder="Start writing Markdown..."
-  ></textarea>
+  <div ref="containerRef" class="editor-textarea"></div>
 </template>
 
-<script setup>
-import { nextTick, onMounted, onUnmounted, ref } from 'vue';
+<script setup lang="ts">
+import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { useEditorStore } from '../stores/editor';
 import { useSettingsStore } from '../stores/settings';
 import { useMarkdownPreview } from '../composables/useMarkdownPreview';
+import { createMarkdownEditor, reconfigureTheme } from '../composables/useCodeMirror';
+import type { EditorView } from '@codemirror/view';
 
 const editorStore = useEditorStore();
 const settingsStore = useSettingsStore();
-const editorRef = ref(null);
-const { setEditorElement, syncFromEditor } = useMarkdownPreview();
+const { setEditorView, syncFromEditor } = useMarkdownPreview();
+const containerRef = ref<HTMLElement | null>(null);
 
-const handleInput = (e) => {
-  editorStore.updateContent(e.target.value);
-};
-
-// Tab key → insert 2 spaces instead of losing focus (§3.1)
-const handleKeydown = async (e) => {
-  if (e.key !== 'Tab') return;
-  e.preventDefault();
-  const el = e.target;
-  const start = el.selectionStart;
-  const end = el.selectionEnd;
-  const value = el.value;
-  editorStore.updateContent(value.substring(0, start) + '  ' + value.substring(end));
-  await nextTick();
-  el.setSelectionRange(start + 2, start + 2);
-};
+let view: EditorView | null = null;
 
 const SCROLL_HIDE_DELAY = 1200;
-let scrollHideTimer = null;
-const handleScroll = (e) => {
-  syncFromEditor();
-  const el = e.currentTarget;
-  el.classList.add('is-scrolling');
-  clearTimeout(scrollHideTimer);
-  scrollHideTimer = setTimeout(() => el.classList.remove('is-scrolling'), SCROLL_HIDE_DELAY);
-};
+let scrollHideTimer: ReturnType<typeof setTimeout> | null = null;
 
-onMounted(() => setEditorElement(editorRef.value));
-onUnmounted(() => {
-  setEditorElement(null);
-  clearTimeout(scrollHideTimer);
+function isDarkPreview(): boolean {
+  if (settingsStore.themeMode === 'dark') return true;
+  if (settingsStore.themeMode === 'light') return false;
+  return typeof window !== 'undefined'
+    && window.matchMedia?.('(prefers-color-scheme: dark)').matches === true;
+}
+
+function handleScroll() {
+  if (!view) return;
+  syncFromEditor();
+  const el = view.scrollDOM;
+  el.classList.add('is-scrolling');
+  if (scrollHideTimer) clearTimeout(scrollHideTimer);
+  scrollHideTimer = setTimeout(() => el.classList.remove('is-scrolling'), SCROLL_HIDE_DELAY);
+}
+
+onMounted(() => {
+  if (!containerRef.value) return;
+  view = createMarkdownEditor({
+    parent: containerRef.value,
+    initialDoc: editorStore.content,
+    theme: {
+      dark: isDarkPreview(),
+      font: settingsStore.editorFont,
+      fontSize: settingsStore.fontSize,
+    },
+    onChange: (value) => editorStore.updateContent(value),
+    onScroll: handleScroll,
+  });
+  setEditorView(view);
 });
 
-// Expose ref for legacy callers (e.g. Toolbar via App.vue)
-defineExpose({ editorRef });
+// External content changes (file open / new / load from drop) → CM doc.
+// Comparing strings short-circuits the typing loop: when the user types,
+// onChange writes the same value into the store; this watcher fires, sees
+// the doc already matches, and bails before causing a redundant dispatch.
+watch(
+  () => editorStore.content,
+  (newContent) => {
+    if (!view) return;
+    const current = view.state.doc.toString();
+    if (current === newContent) return;
+    view.dispatch({
+      changes: { from: 0, to: current.length, insert: newContent },
+    });
+  },
+);
+
+// Reactive theme + font: reconfigure the theme compartment in place rather
+// than rebuilding state, so cursor/selection survive the swap.
+watch(
+  [
+    () => settingsStore.themeMode,
+    () => settingsStore.colorScheme,
+    () => settingsStore.editorFont,
+    () => settingsStore.fontSize,
+  ],
+  () => {
+    if (!view) return;
+    reconfigureTheme(view, {
+      dark: isDarkPreview(),
+      font: settingsStore.editorFont,
+      fontSize: settingsStore.fontSize,
+    });
+  },
+);
+
+onUnmounted(() => {
+  view?.destroy();
+  view = null;
+  setEditorView(null);
+  if (scrollHideTimer) clearTimeout(scrollHideTimer);
+});
 </script>
 
 <style scoped>
 .editor-textarea {
   width: 100%;
   height: 100%;
-  padding: 2rem 2.5rem;
-  border: none;
-  outline: none;
-  resize: none;
-  line-height: 1.75;
   background: transparent;
   color: var(--text-color);
-  box-sizing: border-box;
-  tab-size: 2;
   transition: color 0.2s;
-}
-
-.editor-textarea::placeholder {
-  color: var(--text-muted);
-  opacity: 0.5;
 }
 </style>

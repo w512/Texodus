@@ -1,8 +1,9 @@
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile, writeFile } from "@tauri-apps/plugin-fs";
 import { marked, type Token, type Tokens } from "marked";
-import DOMPurify from "dompurify";
 import type { Content, TDocumentDefinitions } from "pdfmake/interfaces";
+import { sanitizeMarkdownHtml } from "./markdownSanitizer";
+import { renderMermaidBlocks, renderMermaidSvg } from "./mermaidRenderer";
 
 type PdfMakeModule = {
   createPdf: (def: TDocumentDefinitions) => { getBlob: () => Promise<Blob> };
@@ -28,79 +29,7 @@ function loadPdfMake(): Promise<PdfMakeModule> {
   return pdfMakePromise;
 }
 
-/**
- * Renders the current markdown content to a full, self-contained HTML
- * document string that includes embedded CSS matching the app's preview
- * styling. Used by both the HTML export and the PDF print pathway.
- */
-export function renderExportHtml(markdown: string, title: string): string {
-  const bodyHtml = DOMPurify.sanitize(
-    marked.parse(markdown, { breaks: true, gfm: true }) as string,
-    {
-      ALLOWED_TAGS: [
-        "h1","h2","h3","h4","h5","h6","p","br","hr",
-        "ul","ol","li","blockquote","pre","code",
-        "strong","em","del","a","img","table","thead",
-        "tbody","tr","th","td","sup","sub","span","div",
-        "input",
-      ],
-      ALLOWED_ATTR: ["href","src","alt","title","class","id","rel","type","checked"],
-    },
-  );
-
-  const hasMermaid = bodyHtml.includes('class="language-mermaid"');
-  let mermaidStyles = "";
-  let mermaidScript = "";
-
-  if (hasMermaid) {
-    mermaidStyles = `
-  .mermaid-svg-container {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 1.5rem;
-    margin: 1.5em 0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    overflow-x: auto;
-  }
-  .mermaid-svg-container svg {
-    max-width: 100%;
-    height: auto;
-    display: block;
-  }
-`;
-    mermaidScript = `
-<script type="module">
-  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-  
-  const blocks = document.querySelectorAll('pre code.language-mermaid');
-  blocks.forEach((block, index) => {
-    const pre = block.parentElement;
-    const div = document.createElement('div');
-    div.className = 'mermaid';
-    div.id = 'mermaid-export-' + index;
-    div.textContent = block.textContent;
-    
-    const container = document.createElement('div');
-    container.className = 'mermaid-svg-container';
-    container.appendChild(div);
-    
-    pre.replaceWith(container);
-  });
-
-  mermaid.initialize({ startOnLoad: true });
-</script>`;
-  }
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${escapeHtml(title)}</title>
-<style>
+const EXPORT_CSS = `
   body {
     max-width: 780px;
     margin: 2rem auto;
@@ -131,17 +60,66 @@ export function renderExportHtml(markdown: string, title: string): string {
   th { background: #f5f7fa; font-weight: 600; }
   hr { border: none; border-top: 2px solid #e0e0e0; margin: 1.5em 0; }
   input[type="checkbox"] { margin-right: 0.5em; accent-color: #2563eb; vertical-align: middle; }
-${mermaidStyles}
+  .mermaid-preview-container {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin: 1.5em 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow-x: auto;
+  }
+  .mermaid-preview-container svg {
+    max-width: 100%;
+    height: auto;
+    display: block;
+  }
+  .mermaid-error-container {
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin: 1.5em 0;
+    color: #1a1d23;
+    font-family: inherit;
+  }
+  .mermaid-error-title { font-weight: 600; color: #ef4444; margin-bottom: 0.5rem; font-size: 0.95rem; }
+  .mermaid-error-text { margin: 0; padding: 0.75rem; background: rgba(0, 0, 0, 0.05); border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem; overflow-x: auto; white-space: pre-wrap; }
   @media print {
     body { margin: 0; padding: 0.5in; max-width: none; }
     pre, blockquote { break-inside: avoid; }
     h1,h2,h3,h4 { break-after: avoid; }
   }
-</style>
+`;
+
+/**
+ * Renders the current markdown to a self-contained HTML document with
+ * embedded styling. Mermaid diagrams are pre-rendered to inline SVG so the
+ * exported file works offline and doesn't violate the app's strict CSP.
+ */
+export async function renderExportHtml(markdown: string, title: string): Promise<string> {
+  const bodyHtml = sanitizeMarkdownHtml(await marked.parse(markdown));
+
+  // Inline mermaid as SVG via a detached container so the export file has
+  // zero external dependencies. The container is never attached to the DOM
+  // — mermaid manages its own temporary render nodes in document.body.
+  const tempContainer = document.createElement("div");
+  tempContainer.innerHTML = bodyHtml;
+  await renderMermaidBlocks(tempContainer, { theme: "default" });
+  const finalBody = tempContainer.innerHTML;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${escapeHtml(title)}</title>
+<style>${EXPORT_CSS}</style>
 </head>
 <body>
-${bodyHtml}
-${mermaidScript}
+${finalBody}
 </body>
 </html>`;
 }
@@ -171,7 +149,7 @@ export function getExportTitle(filePath: string | null): string {
 export async function exportHtml(markdown: string, filePath: string | null): Promise<boolean> {
   try {
     const title = getExportTitle(filePath);
-    const html = renderExportHtml(markdown, title);
+    const html = await renderExportHtml(markdown, title);
 
     const savePath = await save({
       filters: [{ name: "HTML Document", extensions: ["html", "htm"] }],
@@ -208,6 +186,18 @@ export async function exportTxt(markdown: string, filePath: string | null): Prom
     return false;
   }
 }
+
+// ── PDF export ────────────────────────────────────────────────────────────
+
+interface MermaidPngResult {
+  pngUrl: string;
+  width: number;
+  height: number;
+}
+
+// Per-export map of code-token → rendered PNG. A WeakMap avoids the previous
+// pattern of mutating `marked` tokens with `(token as any).mermaidPngUrl`.
+type MermaidPngMap = WeakMap<Tokens.Code, MermaidPngResult>;
 
 function inlineTokensToContent(tokens: Token[] | undefined): Content[] {
   if (!tokens) return [];
@@ -259,7 +249,7 @@ function inlineTokensToContent(tokens: Token[] | undefined): Content[] {
   return out;
 }
 
-function blockTokensToContent(tokens: Token[]): Content[] {
+function blockTokensToContent(tokens: Token[], mermaidPngs: MermaidPngMap): Content[] {
   const out: Content[] = [];
   for (const token of tokens) {
     switch (token.type) {
@@ -283,7 +273,7 @@ function blockTokensToContent(tokens: Token[]): Content[] {
       case "list": {
         const l = token as Tokens.List;
         const items: Content[] = l.items.map((item) => {
-          const inner = blockTokensToContent(item.tokens);
+          const inner = blockTokensToContent(item.tokens, mermaidPngs);
           const flat: Content = inner.length === 1 ? inner[0] : { stack: inner };
           if (item.task) {
             const marker = item.checked ? "☑  " : "☐  ";
@@ -296,11 +286,12 @@ function blockTokensToContent(tokens: Token[]): Content[] {
       }
       case "code": {
         const c = token as Tokens.Code;
-        if ((c as any).mermaidPngUrl) {
-          const width = Math.min(495, (c as any).mermaidWidth || 495);
+        const png = mermaidPngs.get(c);
+        if (png) {
+          const width = Math.min(495, png.width || 495);
           out.push({
-            image: (c as any).mermaidPngUrl,
-            width: width,
+            image: png.pngUrl,
+            width,
             margin: [0, 6, 0, 6],
             alignment: "center",
           });
@@ -311,7 +302,7 @@ function blockTokensToContent(tokens: Token[]): Content[] {
       }
       case "blockquote": {
         const b = token as Tokens.Blockquote;
-        out.push({ stack: blockTokensToContent(b.tokens), style: "blockquote", margin: [12, 4, 0, 4] });
+        out.push({ stack: blockTokensToContent(b.tokens, mermaidPngs), style: "blockquote", margin: [12, 4, 0, 4] });
         break;
       }
       case "hr":
@@ -357,12 +348,6 @@ function blockTokensToContent(tokens: Token[]): Content[] {
   return out;
 }
 
-interface MermaidPngResult {
-  pngUrl: string;
-  width: number;
-  height: number;
-}
-
 function svgToPng(svgString: string): Promise<MermaidPngResult> {
   return new Promise((resolve, reject) => {
     const parser = new DOMParser();
@@ -396,7 +381,7 @@ function svgToPng(svgString: string): Promise<MermaidPngResult> {
     img.onload = () => {
       try {
         const canvas = document.createElement("canvas");
-        const scale = 2; // high resolution scale
+        const scale = 2; // high-DPI for crisp print output
         canvas.width = width * scale;
         canvas.height = height * scale;
 
@@ -424,72 +409,61 @@ function svgToPng(svgString: string): Promise<MermaidPngResult> {
   });
 }
 
-async function preRenderMermaidTokens(tokens: Token[]): Promise<void> {
-  try {
-    const mermaidModule = await import("mermaid");
-    const mermaid = mermaidModule.default || mermaidModule;
-
-    // Initialize Mermaid with default (light) theme for PDF readability
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: "default",
-      securityLevel: "loose",
-    });
-
-    for (let i = 0; i < tokens.length; i++) {
-      const token = tokens[i];
-      if (token.type === "code" && token.lang === "mermaid") {
-        const id = `mermaid-pdf-${Date.now()}-${i}`;
-        try {
-          const { svg } = await mermaid.render(id, token.text);
-          const result = await svgToPng(svg);
-          (token as any).mermaidPngUrl = result.pngUrl;
-          (token as any).mermaidWidth = result.width;
-          (token as any).mermaidHeight = result.height;
-        } catch (err) {
-          console.error("Failed to render Mermaid diagram for PDF:", err);
-          const tempEl = document.getElementById(id);
-          if (tempEl) tempEl.remove();
+/**
+ * Walks the token tree once, collecting every fenced mermaid code block.
+ * Replaces the previous two-pass approach (checkHasMermaid + preRender).
+ */
+function collectMermaidCodeTokens(tokens: Token[]): Tokens.Code[] {
+  const out: Tokens.Code[] = [];
+  const walk = (list: Token[]) => {
+    for (const t of list) {
+      if (t.type === "code" && (t as Tokens.Code).lang === "mermaid") {
+        out.push(t as Tokens.Code);
+      }
+      if (t.type === "list") {
+        for (const item of (t as Tokens.List).items) {
+          if (Array.isArray(item.tokens)) walk(item.tokens);
         }
-      } else if (token.type === "list" && "items" in token && Array.isArray((token as any).items)) {
-        for (const item of (token as any).items) {
-          if (Array.isArray(item.tokens)) {
-            await preRenderMermaidTokens(item.tokens);
-          }
-        }
-      } else if ("tokens" in token && Array.isArray((token as any).tokens)) {
-        await preRenderMermaidTokens((token as any).tokens);
+      } else if ("tokens" in t && Array.isArray((t as { tokens?: Token[] }).tokens)) {
+        walk((t as { tokens: Token[] }).tokens);
       }
     }
-  } catch (err) {
-    console.error("Failed to load or initialize Mermaid for PDF export:", err);
+  };
+  walk(tokens);
+  return out;
+}
+
+async function preRenderMermaidPngs(
+  codeTokens: Tokens.Code[],
+  mermaidPngs: MermaidPngMap,
+): Promise<void> {
+  for (let i = 0; i < codeTokens.length; i++) {
+    const token = codeTokens[i];
+    const id = `mermaid-pdf-${Date.now()}-${i}`;
+    try {
+      const svg = await renderMermaidSvg(token.text, id, { theme: "default" });
+      const png = await svgToPng(svg);
+      mermaidPngs.set(token, png);
+    } catch (err) {
+      console.error("Failed to render Mermaid diagram for PDF:", err);
+      const tempEl = document.getElementById(id);
+      if (tempEl) tempEl.remove();
+    }
   }
 }
 
 async function buildPdfDocDefinition(markdown: string, title: string): Promise<TDocumentDefinitions> {
   const tokens = marked.lexer(markdown);
-  
-  // Pre-render any Mermaid diagrams to PNG
-  const checkHasMermaid = (tList: Token[]): boolean => {
-    return tList.some(t => {
-      if (t.type === "code" && t.lang === "mermaid") return true;
-      if (t.type === "list" && "items" in t && Array.isArray((t as any).items)) {
-        return (t as any).items.some((item: any) => Array.isArray(item.tokens) && checkHasMermaid(item.tokens));
-      }
-      if ("tokens" in t && Array.isArray((t as any).tokens)) {
-        return checkHasMermaid((t as any).tokens);
-      }
-      return false;
-    });
-  };
-  
-  if (checkHasMermaid(tokens)) {
-    await preRenderMermaidTokens(tokens);
+
+  const mermaidPngs: MermaidPngMap = new WeakMap();
+  const mermaidTokens = collectMermaidCodeTokens(tokens);
+  if (mermaidTokens.length > 0) {
+    await preRenderMermaidPngs(mermaidTokens, mermaidPngs);
   }
 
   return {
     info: { title },
-    content: blockTokensToContent(tokens),
+    content: blockTokensToContent(tokens, mermaidPngs),
     defaultStyle: { font: "Roboto", fontSize: 11, lineHeight: 1.4, color: "#1a1d23" },
     pageMargins: [50, 50, 50, 50],
     styles: {

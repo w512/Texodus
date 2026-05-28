@@ -1,6 +1,6 @@
 <template>
   <Transition name="fade">
-    <div v-if="editorStore.aboutVisible" class="about-overlay" @click.self="close">
+    <div v-if="settingsStore.aboutVisible" class="about-overlay" @click.self="close">
       <div class="about-dialog glass">
         <button class="close-btn" @click="close" aria-label="Close">&times;</button>
         
@@ -49,9 +49,9 @@
 import { ref, onMounted } from 'vue';
 import { getVersion } from '@tauri-apps/api/app';
 import packageJson from '../../package.json';
-import { useEditorStore } from '../stores/editor';
+import { useSettingsStore } from '../stores/settings';
 
-const editorStore = useEditorStore();
+const settingsStore = useSettingsStore();
 const activeTab = ref<'info' | 'license'>('info');
 const appVersion = ref(packageJson.version);
 
@@ -64,7 +64,7 @@ onMounted(async () => {
 });
 
 const close = () => {
-  editorStore.setAboutVisible(false);
+  settingsStore.setAboutVisible(false);
   activeTab.value = 'info';
 };
 

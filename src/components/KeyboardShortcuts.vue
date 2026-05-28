@@ -1,145 +1,91 @@
-<script setup>
+<script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue';
 import { useMarkdownPreview } from '../composables/useMarkdownPreview';
 import { applyFormat } from "../composables/useFormatting";
-import { useEditorStore } from "../stores/editor";
 
-const { getEditorElement } = useMarkdownPreview();
-const editorStore = useEditorStore();
+const { getEditorView } = useMarkdownPreview();
+const isMac = navigator.userAgent.includes('Macintosh');
+
+interface ShortcutKey {
+  meta?: boolean;
+  ctrl?: boolean;
+  shift?: boolean;
+  alt?: boolean;
+  code: string;
+}
+
+interface ShortcutDef {
+  format: string;
+  mac: ShortcutKey;
+  win: ShortcutKey;
+}
 
 // File shortcuts (New / Open / Save / Save As) are owned by the native app
 // menu's accelerators — see composables/useAppMenu.ts. This handler covers
-// all 17 formatting shortcuts, and only fires while the editor textarea is focused.
-const handleKeydown = (e) => {
-  const isMac = navigator.userAgent.includes("Macintosh");
-  const cmd = isMac ? e.metaKey : e.ctrlKey;
-  const ctrl = e.ctrlKey;
-  const shift = e.shiftKey;
-  const alt = e.altKey;
+// the 17 formatting shortcuts and only fires while the editor textarea is focused.
+//
+// Each entry specifies the EXACT modifier set for both platforms; matching is
+// strict equality, so combos like Cmd+Ctrl+K won't accidentally trip Cmd+K.
+// `meta` = Cmd on macOS; `ctrl` is independent so Mac-only ^K (true ctrl, no
+// cmd) can be expressed cleanly.
+//
+// Order matters when two entries share a code+key but differ in modifiers:
+// keep the more-specific (more modifiers down) entry first so the loop hits
+// it before the broader one. This isn't strictly needed today because every
+// combination has unique modifier sets, but it's a safe convention going forward.
 
-  const ta = getEditorElement();
-  if (!ta || document.activeElement !== ta) return;
+const SHORTCUTS: ShortcutDef[] = [
+  // -- Inline wrap --
+  { format: 'bold',         mac: { meta: true,                  code: 'KeyB' }, win: { ctrl: true,                    code: 'KeyB' } },
+  { format: 'italic',       mac: { meta: true,                  code: 'KeyI' }, win: { ctrl: true,                    code: 'KeyI' } },
+  { format: 'underline',    mac: { meta: true,                  code: 'KeyU' }, win: { ctrl: true,                    code: 'KeyU' } },
+  { format: 'strikethrough',mac: { meta: true, shift: true,     code: 'KeyE' }, win: { ctrl: true, shift: true,       code: 'KeyE' } },
+  { format: 'link',         mac: {             ctrl: true, shift: true, code: 'KeyL' }, win: { ctrl: true, shift: true, code: 'KeyL' } },
 
-  // 1. Underline: ⌘U (Cmd+U on Mac, Ctrl+U on Windows)
-  if (cmd && !shift && !alt && e.code === 'KeyU') {
-    e.preventDefault();
-    applyFormat('underline', ta);
-    return;
-  }
-  
-  // 2. Strikethrough: ⇧⌘E (Cmd+Shift+E on Mac, Ctrl+Shift+E on Windows)
-  if (cmd && shift && !alt && e.code === 'KeyE') {
-    e.preventDefault();
-    applyFormat('strikethrough', ta);
-    return;
-  }
-  
-  // 3. Link: ^⇧L (Ctrl+Shift+L on Mac, and Ctrl+Shift+L on Windows/Linux too since there's no conflict)
-  if (ctrl && shift && !alt && e.code === 'KeyL') {
-    e.preventDefault();
-    applyFormat('link', ta);
-    return;
-  }
-  
-  // 4. Table: ⌘T (Cmd+T on Mac, Ctrl+T on Windows)
-  if (cmd && !shift && !alt && e.code === 'KeyT') {
-    e.preventDefault();
-    applyFormat('table', ta);
-    return;
-  }
-  
-  // 5. Unordered List: ^U (Ctrl+U on Mac). On Windows/Linux, Ctrl+U is Underline, so we map ^U to Ctrl+Alt+U to avoid conflict!
-  if ((isMac ? (ctrl && !cmd && !shift && !alt) : (ctrl && !shift && alt)) && e.code === 'KeyU') {
-    e.preventDefault();
-    applyFormat('list', ta);
-    return;
-  }
-  
-  // 6. Ordered List: ^⇧U (Ctrl+Shift+U on Mac). On Windows/Linux, we map to Ctrl+Alt+Shift+U to avoid conflict!
-  if ((isMac ? (ctrl && !cmd && shift && !alt) : (ctrl && shift && alt)) && e.code === 'KeyU') {
-    e.preventDefault();
-    applyFormat('ordered_list', ta);
-    return;
-  }
-  
-  // 7. Task List: ⇧⌘T (Cmd+Shift+T on Mac, Ctrl+Shift+T on Windows)
-  if (cmd && shift && !alt && e.code === 'KeyT') {
-    e.preventDefault();
-    applyFormat('task_list', ta);
-    return;
-  }
-  
-  // 8. Block Quote: ⇧⌘B (Cmd+Shift+B on Mac, Ctrl+Shift+B on Windows)
-  if (cmd && shift && !alt && e.code === 'KeyB') {
-    e.preventDefault();
-    applyFormat('blockquote', ta);
-    return;
-  }
-  
-  // 9. Bold: ⌘B (Cmd+B on Mac, Ctrl+B on Windows)
-  if (cmd && !shift && !alt && e.code === 'KeyB') {
-    e.preventDefault();
-    applyFormat('bold', ta);
-    return;
-  }
-  
-  // 10. Italic: ⌘I (Cmd+I on Mac, Ctrl+I on Windows)
-  if (cmd && !shift && !alt && e.code === 'KeyI') {
-    e.preventDefault();
-    applyFormat('italic', ta);
-    return;
-  }
-  
-  // 11. Inline Code: ⌘K (Cmd+K on Mac, Ctrl+K on Windows)
-  if (cmd && !shift && !alt && e.code === 'KeyK') {
-    e.preventDefault();
-    applyFormat('code', ta);
-    return;
-  }
-  
-  // 12. Block Code: ⇧⌘K (Cmd+Shift+K on Mac, Ctrl+Shift+K on Windows)
-  if (cmd && shift && !alt && e.code === 'KeyK') {
-    e.preventDefault();
-    applyFormat('block_code', ta);
-    return;
-  }
-  
-  // 13. Inline Math: ^K (Ctrl+K on Mac). On Windows/Linux, we map to Ctrl+Alt+K to avoid conflict with Ctrl+K!
-  if ((isMac ? (ctrl && !cmd && !shift && !alt) : (ctrl && !shift && alt)) && e.code === 'KeyK') {
-    e.preventDefault();
-    applyFormat('inline_math', ta);
-    return;
-  }
-  
-  // 14. Block Math: ^⇧K (Ctrl+Shift+K on Mac). On Windows/Linux, we map to Ctrl+Alt+Shift+K to avoid conflict with Ctrl+Shift+K!
-  if ((isMac ? (ctrl && !cmd && shift && !alt) : (ctrl && shift && alt)) && e.code === 'KeyK') {
-    e.preventDefault();
-    applyFormat('block_math', ta);
-    return;
-  }
-  
-  // 15. Heading 1-6: ⌘1 to ⌘6 (Cmd+1..6 on Mac, Ctrl+1..6 on Windows)
-  if (cmd && !shift && !alt && e.code.startsWith('Digit')) {
-    const digit = parseInt(e.code.replace('Digit', ''), 10);
-    if (digit >= 1 && digit <= 6) {
+  // -- Code & math --
+  { format: 'block_code',   mac: { meta: true, shift: true,     code: 'KeyK' }, win: { ctrl: true, shift: true,       code: 'KeyK' } },
+  { format: 'code',         mac: { meta: true,                  code: 'KeyK' }, win: { ctrl: true,                    code: 'KeyK' } },
+  // Mac ^K vs ^Shift+K (true ctrl, no cmd) → Win Ctrl+Alt+K to avoid Ctrl+K collision
+  { format: 'block_math',   mac: { ctrl: true, shift: true,     code: 'KeyK' }, win: { ctrl: true, shift: true, alt: true, code: 'KeyK' } },
+  { format: 'inline_math',  mac: { ctrl: true,                  code: 'KeyK' }, win: { ctrl: true, alt: true,         code: 'KeyK' } },
+
+  // -- Blocks --
+  { format: 'task_list',    mac: { meta: true, shift: true,     code: 'KeyT' }, win: { ctrl: true, shift: true,       code: 'KeyT' } },
+  { format: 'table',        mac: { meta: true,                  code: 'KeyT' }, win: { ctrl: true,                    code: 'KeyT' } },
+  { format: 'blockquote',   mac: { meta: true, shift: true,     code: 'KeyB' }, win: { ctrl: true, shift: true,       code: 'KeyB' } },
+  // Mac ^Shift+U vs ^U → Win Ctrl+Alt+(Shift)+U to dodge Ctrl+U=Underline
+  { format: 'ordered_list', mac: { ctrl: true, shift: true,     code: 'KeyU' }, win: { ctrl: true, alt: true, shift: true, code: 'KeyU' } },
+  { format: 'list',         mac: { ctrl: true,                  code: 'KeyU' }, win: { ctrl: true, alt: true,         code: 'KeyU' } },
+  { format: 'horizontal_rule', mac: { meta: true, alt: true,    code: 'KeyS' }, win: { ctrl: true, alt: true,         code: 'KeyS' } },
+
+  // -- Headings & paragraph --
+  { format: 'paragraph',    mac: { meta: true, shift: true,     code: 'Digit0' }, win: { ctrl: true, shift: true,     code: 'Digit0' } },
+  { format: 'heading1',     mac: { meta: true,                  code: 'Digit1' }, win: { ctrl: true,                  code: 'Digit1' } },
+  { format: 'heading2',     mac: { meta: true,                  code: 'Digit2' }, win: { ctrl: true,                  code: 'Digit2' } },
+  { format: 'heading3',     mac: { meta: true,                  code: 'Digit3' }, win: { ctrl: true,                  code: 'Digit3' } },
+  { format: 'heading4',     mac: { meta: true,                  code: 'Digit4' }, win: { ctrl: true,                  code: 'Digit4' } },
+  { format: 'heading5',     mac: { meta: true,                  code: 'Digit5' }, win: { ctrl: true,                  code: 'Digit5' } },
+  { format: 'heading6',     mac: { meta: true,                  code: 'Digit6' }, win: { ctrl: true,                  code: 'Digit6' } },
+];
+
+function modsMatch(e: KeyboardEvent, key: ShortcutKey): boolean {
+  return e.code === key.code
+    && !!e.metaKey  === !!key.meta
+    && !!e.ctrlKey  === !!key.ctrl
+    && !!e.shiftKey === !!key.shift
+    && !!e.altKey   === !!key.alt;
+}
+
+const handleKeydown = (e: KeyboardEvent) => {
+  const view = getEditorView();
+  if (!view || !view.hasFocus) return;
+
+  for (const sc of SHORTCUTS) {
+    if (modsMatch(e, isMac ? sc.mac : sc.win)) {
       e.preventDefault();
-      applyFormat(`heading${digit}`, ta);
+      applyFormat(sc.format, view);
       return;
     }
-  }
-  
-  // 16. Paragraph: ⇧⌘0 (Cmd+Shift+0 on Mac, Ctrl+Shift+0 on Windows)
-  if (cmd && shift && !alt && e.code === 'Digit0') {
-    e.preventDefault();
-    applyFormat('paragraph', ta);
-    return;
-  }
-  
-  // 17. Horizontal Rule: ⌥⌘S (Cmd+Opt+S on Mac, Ctrl+Alt+S on Windows)
-  if (cmd && !shift && alt && e.code === 'KeyS') {
-    e.preventDefault();
-    applyFormat('horizontal_rule', ta);
-    return;
   }
 };
 

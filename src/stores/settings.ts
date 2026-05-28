@@ -49,6 +49,7 @@ interface PersistedSettings {
 
 interface SettingsState extends PersistedSettings {
   settingsVisible: boolean;
+  aboutVisible: boolean;
 }
 
 const STORAGE_KEY = 'texodus.settings.v1';
@@ -63,14 +64,15 @@ const DEFAULTS: PersistedSettings = {
 };
 
 function loadFromStorage(): SettingsState {
-  if (typeof localStorage === 'undefined') return { ...DEFAULTS, settingsVisible: false };
+  const transient = { settingsVisible: false, aboutVisible: false };
+  if (typeof localStorage === 'undefined') return { ...DEFAULTS, ...transient };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULTS, settingsVisible: false };
+    if (!raw) return { ...DEFAULTS, ...transient };
     const parsed = JSON.parse(raw) as Partial<PersistedSettings>;
-    return { ...DEFAULTS, ...parsed, settingsVisible: false };
+    return { ...DEFAULTS, ...parsed, ...transient };
   } catch {
-    return { ...DEFAULTS, settingsVisible: false };
+    return { ...DEFAULTS, ...transient };
   }
 }
 
@@ -81,6 +83,7 @@ export const useSettingsStore = defineStore('settings', {
     setThemeMode(mode: ThemeMode) { this.themeMode = mode; },
     setColorScheme(id: ColorSchemeId) { this.colorScheme = id; },
     setSettingsVisible(v: boolean) { this.settingsVisible = v; },
+    setAboutVisible(v: boolean) { this.aboutVisible = v; },
     setEditorFont(font: string) { this.editorFont = font; },
     setPreviewFont(font: string) { this.previewFont = font; },
     setFontSize(size: number) {
@@ -102,7 +105,7 @@ export const useSettingsStore = defineStore('settings', {
     persist() {
       if (typeof localStorage === 'undefined') return;
       try {
-        const { settingsVisible: _, ...toSave } = this.$state;
+        const { settingsVisible: _s, aboutVisible: _a, ...toSave } = this.$state;
         localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
       } catch {
         // Quota exceeded or unavailable — silently ignore.

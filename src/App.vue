@@ -21,8 +21,8 @@
   </ThemeProvider>
 </template>
 
-<script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+<script setup lang="ts">
+import { computed, onMounted, onUnmounted, watch } from 'vue';
 import { useSettingsStore } from './stores/settings';
 import { useEditorStore } from './stores/editor';
 import TitleBar from './components/TitleBar.vue';
@@ -36,8 +36,9 @@ import AboutDialog from './components/AboutDialog.vue';
 import SettingsDialog from './components/SettingsDialog.vue';
 import {
   openFile, saveFile, saveFileAs, newFile,
-  loadFileFromPath, updateWindowTitle,
+  loadFileFromPath, updateWindowTitle, showToast,
 } from './services/fileService';
+import { basename } from './utils/path';
 import { applyFormat } from './composables/useFormatting';
 import { setupAppMenu } from './composables/useAppMenu';
 import { useMarkdownPreview } from './composables/useMarkdownPreview';
@@ -49,7 +50,7 @@ import { listen } from '@tauri-apps/api/event';
 
 const settingsStore = useSettingsStore();
 const editorStore = useEditorStore();
-const { getEditorElement } = useMarkdownPreview();
+const { getEditorView } = useMarkdownPreview();
 
 // ── File handlers ─────────────────────────────────────────────────────────────
 
@@ -57,7 +58,7 @@ const { getEditorElement } = useMarkdownPreview();
 // technically importable/usable by the native menu and shortcuts, so keeping
 // the imports in the file is fine.
 
-const handleFormat = (format) => applyFormat(format, getEditorElement());
+const handleFormat = (format: string) => applyFormat(format, getEditorView());
 
 // ── Rebuild native menu when recent files change ──────────────────────────────
 
@@ -72,9 +73,7 @@ watch(
 // ── Window title for titlebar ─────────────────────────────────────────────────
 
 const windowTitle = computed(() => {
-  const name = editorStore.filePath
-    ? editorStore.filePath.split('/').pop().split('\\').pop()
-    : 'Untitled';
+  const name = editorStore.filePath ? basename(editorStore.filePath) : 'Untitled';
   return editorStore.isDirty ? `● ${name}` : name;
 });
 
@@ -97,20 +96,22 @@ watch(
 
 // ── Window close confirmation (§4.4) + Tauri drag-drop (§4.1) ─────────────────
 
-let unlistenClose = null;
-let unlistenDrop = null;
-let unlistenFileOpen = null;
-let unlistenFocus = null;
+type Unlisten = (() => void) | null;
+let unlistenClose: Unlisten = null;
+let unlistenDrop: Unlisten = null;
+let unlistenFileOpen: Unlisten = null;
+let unlistenFocus: Unlisten = null;
 
 // Drains the Rust-side pending-file slot. Used both at mount (to pick up a
 // path that arrived before we could listen) and on every `open-file-pending`
 // wake-up (Finder "Open With" while running, second-launch via single-instance).
 async function consumePendingFile() {
   try {
-    const path = await invoke('take_pending_file');
+    const path = await invoke<string | null>('take_pending_file');
     if (path) await loadFileFromPath(editorStore, path);
   } catch (e) {
     console.warn('Failed to consume pending file:', e);
+    showToast('Failed to open file');
   }
 }
 
