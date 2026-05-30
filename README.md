@@ -6,7 +6,7 @@ Texodus is a modern, fast, and beautiful Markdown editor built with **Tauri 2** 
 
 ## 📥 Installation
 
-Download the latest release from the [releases page](https://github.com/w512/texodus/releases). It's available for macOS, Windows, and Linux. You can also build it from source.
+Download the latest release from the [releases page](https://github.com/w512/texodus/releases). It's available for **macOS**, **Windows**, and **Linux**. You can also build it from source.
 
 ## ✨ Features
 
@@ -48,15 +48,15 @@ Download the latest release from the [releases page](https://github.com/w512/tex
 -   **Styling**: Vanilla CSS (no frameworks) with CSS variables for theming.
 -   **Package Manager**: [Bun](https://bun.sh/) (recommended)
 
-## 🚀 Getting Started
+## 🚀 Getting Started (for Developers)
 
-### Prerequisites
+#### Prerequisites
 
 -   [Rust](https://www.rust-lang.org/tools/install) installed.
 -   [Bun](https://bun.sh/) (preferred) or Node.js.
 -   System-specific dependencies for Tauri (see [Tauri Prerequisites](https://v2.tauri.app/start/prerequisites/)).
 
-### Installation
+#### Installation
 
 1.  Clone the repository:
     ```bash
@@ -74,7 +74,7 @@ Download the latest release from the [releases page](https://github.com/w512/tex
     bun run tauri dev
     ```
 
-## 📦 Building
+#### 📦 Building
 
 To create a production-ready installer for your current platform:
 
