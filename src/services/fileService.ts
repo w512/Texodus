@@ -1,6 +1,7 @@
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { open, save, message } from '@tauri-apps/plugin-dialog';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { invoke } from '@tauri-apps/api/core';
 import { useEditorStore } from '../stores/editor';
 import { useSettingsStore } from '../stores/settings';
 import { promptUnsavedChanges } from '../composables/useUnsavedPrompt';
@@ -99,6 +100,83 @@ export async function closeFile(store: EditorStore): Promise<void> {
   if (!(await confirmCanProceed(store))) return;
   store.reset();
   await updateWindowTitle(store);
+}
+
+// ── Mode-aware document ops ───────────────────────────────────────────────────
+// These wrap the low-level ops above with a branch on settings.documentMode.
+// Callers (native menu, drag-drop, TabBar) should prefer these so the same
+// action (Open, New, Close) does the right thing in either mode.
+
+function isActiveTabEmpty(store: EditorStore): boolean {
+  return !store.filePath && !store.isDirty && store.content === '';
+}
+
+export async function requestNewDocument(store: EditorStore): Promise<void> {
+  const settings = useSettingsStore();
+  if (settings.documentMode === 'tabs') {
+    store.addTab();
+    await updateWindowTitle(store);
+  } else {
+    void invoke('open_new_window');
+  }
+}
+
+export async function requestOpenDocument(store: EditorStore): Promise<void> {
+  const settings = useSettingsStore();
+  if (settings.documentMode === 'tabs') {
+    const selected = await open({ multiple: false, filters: FILE_FILTERS });
+    if (!selected) return;
+    await requestOpenFromPath(store, selected as string);
+  } else {
+    if (store.filePath || store.isDirty) {
+      const selected = await open({ multiple: false, filters: FILE_FILTERS });
+      if (!selected) return;
+      void invoke('open_new_window', { path: selected as string });
+    } else {
+      await openFile(store);
+    }
+  }
+}
+
+export async function requestOpenFromPath(store: EditorStore, path: string): Promise<void> {
+  const settings = useSettingsStore();
+  if (settings.documentMode === 'tabs') {
+    try {
+      const content = await readTextFile(path);
+      if (isActiveTabEmpty(store)) {
+        store.loadFile(content, path);
+      } else {
+        store.addTab({ content, filePath: path, isDirty: false });
+      }
+      useSettingsStore().addRecentFile(path);
+      await updateWindowTitle(store);
+    } catch (e) {
+      await showError('Failed to open file', e);
+    }
+  } else {
+    if (store.filePath || store.isDirty) {
+      void invoke('open_new_window', { path });
+    } else {
+      await loadFileFromPath(store, path);
+    }
+  }
+}
+
+/**
+ * Close action wired to Cmd/Ctrl+W. In tabs mode this closes the active tab
+ * (with an unsaved-changes prompt when dirty); in windows mode it resets the
+ * current document in place — the OS close button / Cmd+Q still own actually
+ * destroying the window.
+ */
+export async function requestCloseDocument(store: EditorStore): Promise<void> {
+  const settings = useSettingsStore();
+  if (settings.documentMode === 'tabs' && store.tabCount > 1) {
+    if (!(await confirmCanProceed(store))) return;
+    store.closeTab(store.activeTabId);
+    await updateWindowTitle(store);
+  } else {
+    await closeFile(store);
+  }
 }
 
 export async function updateWindowTitle(store: EditorStore): Promise<void> {

@@ -3,6 +3,7 @@ import { type ColorSchemeId } from '../themes';
 
 export type LayoutMode = 'split' | 'preview' | 'focus';
 export type ThemeMode = 'light' | 'dark' | 'system';
+export type DocumentMode = 'windows' | 'tabs';
 export type { ColorSchemeId };
 
 // Bundled = shipped via @fontsource/* (works offline).
@@ -45,6 +46,7 @@ interface PersistedSettings {
   previewFont: string;
   fontSize: number;
   recentFiles: string[];
+  documentMode: DocumentMode;
 }
 
 interface SettingsState extends PersistedSettings {
@@ -61,6 +63,7 @@ const DEFAULTS: PersistedSettings = {
   previewFont: PREVIEW_FONTS[0].value,
   fontSize: 14,
   recentFiles: [],
+  documentMode: 'windows',
 };
 
 function loadFromStorage(): SettingsState {
@@ -82,6 +85,7 @@ export const useSettingsStore = defineStore('settings', {
     setLayoutMode(mode: LayoutMode) { this.layoutMode = mode; },
     setThemeMode(mode: ThemeMode) { this.themeMode = mode; },
     setColorScheme(id: ColorSchemeId) { this.colorScheme = id; },
+    setDocumentMode(mode: DocumentMode) { this.documentMode = mode; },
     setSettingsVisible(v: boolean) { this.settingsVisible = v; },
     setAboutVisible(v: boolean) { this.aboutVisible = v; },
     setEditorFont(font: string) { this.editorFont = font; },

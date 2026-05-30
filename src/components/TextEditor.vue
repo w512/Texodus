@@ -7,8 +7,15 @@ import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { useEditorStore } from '../stores/editor';
 import { useSettingsStore } from '../stores/settings';
 import { useMarkdownPreview } from '../composables/useMarkdownPreview';
-import { createMarkdownEditor, reconfigureTheme } from '../composables/useCodeMirror';
+import {
+  createMarkdownEditor,
+  createMarkdownState,
+  reconfigureTheme,
+  reconfigureThemeOnState,
+  type ThemeOpts,
+} from '../composables/useCodeMirror';
 import type { EditorView } from '@codemirror/view';
+import type { EditorState } from '@codemirror/state';
 
 const editorStore = useEditorStore();
 const settingsStore = useSettingsStore();
@@ -16,6 +23,12 @@ const { setEditorView, syncFromEditor } = useMarkdownPreview();
 const containerRef = ref<HTMLElement | null>(null);
 
 let view: EditorView | null = null;
+
+// Saved CodeMirror states for tabs that aren't currently in the view. The
+// active tab's state lives in `view.state`; inactive tabs dehydrate here so
+// switching back restores undo history, selection, and scroll position.
+const tabStates = new Map<string, EditorState>();
+let lastActiveTabId: string | null = null;
 
 const SCROLL_HIDE_DELAY = 1200;
 let scrollHideTimer: ReturnType<typeof setTimeout> | null = null;
@@ -27,6 +40,14 @@ function isDarkPreview(): boolean {
     && window.matchMedia?.('(prefers-color-scheme: dark)').matches === true;
 }
 
+function currentThemeOpts(): ThemeOpts {
+  return {
+    dark: isDarkPreview(),
+    font: settingsStore.editorFont,
+    fontSize: settingsStore.fontSize,
+  };
+}
+
 function handleScroll() {
   if (!view) return;
   syncFromEditor();
@@ -36,40 +57,71 @@ function handleScroll() {
   scrollHideTimer = setTimeout(() => el.classList.remove('is-scrolling'), SCROLL_HIDE_DELAY);
 }
 
+function buildStateForContent(content: string): EditorState {
+  return createMarkdownState({
+    initialDoc: content,
+    theme: currentThemeOpts(),
+    onChange: (value) => editorStore.updateContent(value),
+    onScroll: handleScroll,
+  });
+}
+
 onMounted(() => {
   if (!containerRef.value) return;
   view = createMarkdownEditor({
     parent: containerRef.value,
     initialDoc: editorStore.content,
-    theme: {
-      dark: isDarkPreview(),
-      font: settingsStore.editorFont,
-      fontSize: settingsStore.fontSize,
-    },
+    theme: currentThemeOpts(),
     onChange: (value) => editorStore.updateContent(value),
     onScroll: handleScroll,
   });
+  lastActiveTabId = editorStore.activeTabId;
   setEditorView(view);
 });
 
-// External content changes (file open / new / load from drop) → CM doc.
-// Comparing strings short-circuits the typing loop: when the user types,
-// onChange writes the same value into the store; this watcher fires, sees
-// the doc already matches, and bails before causing a redundant dispatch.
+// Unified handler for tab switches and external content updates. A tab switch
+// is detected by a change in activeTabId; everything else is treated as an
+// in-place content sync for the current tab (e.g. file reload).
 watch(
-  () => editorStore.content,
-  (newContent) => {
+  () => [editorStore.activeTabId, editorStore.content] as const,
+  ([newId, newContent]) => {
     if (!view) return;
-    const current = view.state.doc.toString();
-    if (current === newContent) return;
-    view.dispatch({
-      changes: { from: 0, to: current.length, insert: newContent },
-    });
+
+    if (lastActiveTabId !== null && lastActiveTabId !== newId) {
+      // Tab switch: dehydrate the previous tab's state, rehydrate the target.
+      tabStates.set(lastActiveTabId, view.state);
+      const cached = tabStates.get(newId);
+      tabStates.delete(newId);
+      const target = cached ?? buildStateForContent(newContent);
+      view.setState(target);
+    } else {
+      // Same tab — external content change (file open / reset). Diff and patch.
+      const current = view.state.doc.toString();
+      if (current !== newContent) {
+        view.dispatch({
+          changes: { from: 0, to: current.length, insert: newContent },
+        });
+      }
+    }
+    lastActiveTabId = newId;
+  },
+);
+
+// Prune cached states for closed tabs so they don't pin memory.
+watch(
+  () => editorStore.tabs.map((t) => t.id).join('|'),
+  () => {
+    const live = new Set(editorStore.tabs.map((t) => t.id));
+    for (const id of tabStates.keys()) {
+      if (!live.has(id)) tabStates.delete(id);
+    }
   },
 );
 
 // Reactive theme + font: reconfigure the theme compartment in place rather
-// than rebuilding state, so cursor/selection survive the swap.
+// than rebuilding state, so cursor/selection survive the swap. Apply the
+// reconfigure to dehydrated tab states too — otherwise switching to an old
+// tab after a theme change would show the previous theme.
 watch(
   [
     () => settingsStore.themeMode,
@@ -79,17 +131,18 @@ watch(
   ],
   () => {
     if (!view) return;
-    reconfigureTheme(view, {
-      dark: isDarkPreview(),
-      font: settingsStore.editorFont,
-      fontSize: settingsStore.fontSize,
-    });
+    const opts = currentThemeOpts();
+    reconfigureTheme(view, opts);
+    for (const [id, st] of tabStates) {
+      tabStates.set(id, reconfigureThemeOnState(st, opts));
+    }
   },
 );
 
 onUnmounted(() => {
   view?.destroy();
   view = null;
+  tabStates.clear();
   setEditorView(null);
   if (scrollHideTimer) clearTimeout(scrollHideTimer);
 });

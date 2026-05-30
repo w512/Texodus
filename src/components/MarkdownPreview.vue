@@ -28,10 +28,14 @@ const previewRef = ref<HTMLElement | null>(null);
 let renderTimer: ReturnType<typeof setTimeout> | null = null;
 const DEBOUNCE_MS = 120;
 
-// Cached last-rendered HTML — lets us skip a DOM thrash on theme/color-scheme
-// changes (which re-trigger render but produce identical HTML for non-mermaid
-// docs), avoiding flicker and preserving selection.
+// Cached last-rendered HTML — lets us skip a DOM thrash when content arrives
+// unchanged (e.g. theme reflow re-triggers render but the markdown didn't
+// change), avoiding flicker and preserving selection. `forceRerender` lets
+// callers (tab switch, theme change) demand a write even when the diff says
+// nothing changed — crucial for the empty→empty case where the cached
+// sentinel and fresh output would otherwise both be '' and miss the swap.
 let lastRenderedHtml = '';
+let forceRerender = true;
 
 const isDarkPreview = computed(() => {
   if (settingsStore.themeMode === 'dark') return true;
@@ -90,9 +94,10 @@ const renderMarkdown = async () => {
   const html = marked.parser(tokens) as string;
   const clean = sanitizeMarkdownHtml(html);
 
-  const htmlChanged = clean !== lastRenderedHtml;
+  const htmlChanged = forceRerender || clean !== lastRenderedHtml;
   if (htmlChanged) {
     lastRenderedHtml = clean;
+    forceRerender = false;
     previewRef.value.innerHTML = clean;
     rewriteLocalImages(previewRef.value, editorStore.filePath);
   }
@@ -129,21 +134,22 @@ watch(
 watch(
   [() => settingsStore.themeMode, () => settingsStore.colorScheme],
   () => {
-    // Theme switch: drop the HTML cache so we re-emit the raw mermaid
-    // `<pre>` blocks and let renderMermaidBlocks re-render them with the
-    // new theme. Without this the previous run's themed SVGs would persist.
-    lastRenderedHtml = '';
+    // Theme switch: force a fresh write so mermaid blocks pick up the new
+    // theme. Without this the previous run's themed SVGs would persist.
+    forceRerender = true;
     if (renderTimer) clearTimeout(renderTimer);
     renderTimer = setTimeout(renderMarkdown, DEBOUNCE_MS);
   }
 );
 
-// File path change ⇒ relative image paths resolve against a new base dir.
-// Drop the cache so rewriteLocalImages runs again with the new dirname.
+// File path change ⇒ relative image paths resolve against a new base dir,
+// AND the active tab may have flipped to a different (or empty) document.
+// Force a fresh write so the new content reaches the DOM even when the
+// diff is empty-vs-empty.
 watch(
   () => editorStore.filePath,
   () => {
-    lastRenderedHtml = '';
+    forceRerender = true;
     if (renderTimer) clearTimeout(renderTimer);
     renderTimer = setTimeout(renderMarkdown, DEBOUNCE_MS);
   }

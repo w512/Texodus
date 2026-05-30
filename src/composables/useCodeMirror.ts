@@ -136,16 +136,24 @@ function buildTheme(opts: ThemeOpts) {
 
 // ── Editor factory ────────────────────────────────────────────────────────
 
-export interface CreateEditorOpts {
-  parent: HTMLElement;
+export interface CreateStateOpts {
   initialDoc: string;
   theme: ThemeOpts;
   onChange: (value: string) => void;
   onScroll: () => void;
 }
 
-export function createMarkdownEditor(opts: CreateEditorOpts): EditorView {
-  const state = EditorState.create({
+export interface CreateEditorOpts extends CreateStateOpts {
+  parent: HTMLElement;
+}
+
+/**
+ * Builds a fresh EditorState carrying all the editor's extensions. Exposed
+ * separately from createMarkdownEditor so callers can pre-build states for
+ * inactive tabs and swap them into a single view via `view.setState(...)`.
+ */
+export function createMarkdownState(opts: CreateStateOpts): EditorState {
+  return EditorState.create({
     doc: opts.initialDoc,
     extensions: [
       history(),
@@ -179,12 +187,24 @@ export function createMarkdownEditor(opts: CreateEditorOpts): EditorView {
       }),
     ],
   });
+}
 
-  return new EditorView({ parent: opts.parent, state });
+export function createMarkdownEditor(opts: CreateEditorOpts): EditorView {
+  return new EditorView({ parent: opts.parent, state: createMarkdownState(opts) });
 }
 
 export function reconfigureTheme(view: EditorView, theme: ThemeOpts): void {
   view.dispatch({
     effects: themeCompartment.reconfigure(buildTheme(theme)),
   });
+}
+
+/**
+ * Applies a theme reconfiguration to a detached state (e.g. one cached for an
+ * inactive tab). Returns the new state — caller must re-store it.
+ */
+export function reconfigureThemeOnState(state: EditorState, theme: ThemeOpts): EditorState {
+  return state.update({
+    effects: themeCompartment.reconfigure(buildTheme(theme)),
+  }).state;
 }

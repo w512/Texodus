@@ -10,6 +10,7 @@
         @cycle-theme="settingsStore.cycleTheme()"
         @format="handleFormat"
       />
+      <TabBar />
       <EditorLayout :layoutMode="settingsStore.layoutMode">
         <template #editor><TextEditor /></template>
         <template #preview><MarkdownPreview /></template>
@@ -26,6 +27,7 @@ import { computed, onMounted, onUnmounted, watch } from 'vue';
 import { useSettingsStore } from './stores/settings';
 import { useEditorStore } from './stores/editor';
 import TitleBar from './components/TitleBar.vue';
+import TabBar from './components/TabBar.vue';
 import EditorLayout from './components/EditorLayout.vue';
 import TextEditor from './components/TextEditor.vue';
 import MarkdownPreview from './components/MarkdownPreview.vue';
@@ -35,8 +37,10 @@ import UnsavedChangesDialog from './components/UnsavedChangesDialog.vue';
 import AboutDialog from './components/AboutDialog.vue';
 import SettingsDialog from './components/SettingsDialog.vue';
 import {
-  openFile, saveFile, saveFileAs, newFile,
-  loadFileFromPath, updateWindowTitle, showToast,
+  saveFile,
+  updateWindowTitle,
+  showToast,
+  requestOpenFromPath,
 } from './services/fileService';
 import { basename } from './utils/path';
 import { applyFormat } from './composables/useFormatting';
@@ -52,18 +56,18 @@ const settingsStore = useSettingsStore();
 const editorStore = useEditorStore();
 const { getEditorView } = useMarkdownPreview();
 
-// ── File handlers ─────────────────────────────────────────────────────────────
-
-// The file handlers for the old toolbar have been removed but these are still
-// technically importable/usable by the native menu and shortcuts, so keeping
-// the imports in the file is fine.
-
 const handleFormat = (format: string) => applyFormat(format, getEditorView());
 
-// ── Rebuild native menu when recent files change ──────────────────────────────
+// ── Rebuild native menu on inputs that affect its structure ──────────────────
+// Recent-files list, current tab count (Close vs Close Tab label), and the
+// documentMode toggle all change which items appear in the File menu.
 
 watch(
-  () => settingsStore.recentFiles,
+  [
+    () => settingsStore.recentFiles,
+    () => settingsStore.documentMode,
+    () => editorStore.tabCount,
+  ],
   async () => {
     try { await setupAppMenu(editorStore); } catch { /* non-critical */ }
   },
@@ -108,7 +112,7 @@ let unlistenFocus: Unlisten = null;
 async function consumePendingFile() {
   try {
     const path = await invoke<string | null>('take_pending_file');
-    if (path) await loadFileFromPath(editorStore, path);
+    if (path) await requestOpenFromPath(editorStore, path);
   } catch (e) {
     console.warn('Failed to consume pending file:', e);
     showToast('Failed to open file');
@@ -125,14 +129,20 @@ onMounted(async () => {
   try {
     const win = getCurrentWindow();
     unlistenClose = await win.onCloseRequested(async (event) => {
-      if (!editorStore.isDirty) return;
+      if (!editorStore.anyTabDirty) return;
       event.preventDefault();
 
-      const choice = await promptUnsavedChanges();
-      if (choice === 'cancel') return;
-      if (choice === 'save') {
-        const saved = await saveFile(editorStore);
-        if (!saved) return;
+      // Walk all dirty tabs sequentially. Switching the active tab first lets
+      // saveFile / the prompt operate on the right document.
+      const dirtyIds = editorStore.tabs.filter((t) => t.isDirty).map((t) => t.id);
+      for (const id of dirtyIds) {
+        editorStore.setActiveTab(id);
+        const choice = await promptUnsavedChanges();
+        if (choice === 'cancel') return;
+        if (choice === 'save') {
+          const saved = await saveFile(editorStore);
+          if (!saved) return;
+        }
       }
       await win.destroy();
     });
@@ -162,7 +172,7 @@ onMounted(async () => {
       const paths = event.payload.paths ?? [];
       const target = paths.find((p) => /\.(md|markdown|txt)$/i.test(p));
       if (!target) return;
-      await loadFileFromPath(editorStore, target);
+      await requestOpenFromPath(editorStore, target);
     });
   } catch (e) {
     console.warn('onDragDropEvent not available:', e);

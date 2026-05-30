@@ -1,14 +1,18 @@
 import { Menu, Submenu, MenuItem, PredefinedMenuItem } from '@tauri-apps/api/menu';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { open as showOpenDialog } from '@tauri-apps/plugin-dialog';
-import { openFile, saveFile, saveFileAs, newFile, loadFileFromPath, closeFile } from '../services/fileService';
+import {
+  saveFile,
+  saveFileAs,
+  requestNewDocument,
+  requestOpenDocument,
+  requestOpenFromPath,
+  requestCloseDocument,
+} from '../services/fileService';
 import { exportPdf, exportHtml, exportTxt } from "../services/exportService";
 import type { useEditorStore } from '../stores/editor';
 import { useSettingsStore } from '../stores/settings';
 import { invoke } from '@tauri-apps/api/core';
 import { basename } from '../utils/path';
-
-const FILE_FILTERS = [{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }];
 
 type EditorStore = ReturnType<typeof useEditorStore>;
 
@@ -50,13 +54,7 @@ export async function setupAppMenu(store: EditorStore): Promise<void> {
       recentMenuItems.push(await MenuItem.new({
         id: `recent-${i}`,
         text: label,
-        action: () => {
-          if (store.filePath || store.isDirty) {
-            void invoke('open_new_window', { path: filePath });
-          } else {
-            void loadFileFromPath(store, filePath);
-          }
-        },
+        action: () => { void requestOpenFromPath(store, filePath); },
       }));
     }
     recentMenuItems.push(await PredefinedMenuItem.new({ item: 'Separator' }));
@@ -72,7 +70,20 @@ export async function setupAppMenu(store: EditorStore): Promise<void> {
     items: recentMenuItems,
   });
 
-  const fileItems = [
+  const inTabsMode = settingsStore.documentMode === 'tabs';
+
+  const fileItems: (MenuItem | PredefinedMenuItem | Submenu)[] = [];
+
+  if (inTabsMode) {
+    fileItems.push(await MenuItem.new({
+      id: 'file-new-tab',
+      text: 'New Tab',
+      accelerator: 'CmdOrCtrl+T',
+      action: () => { void requestNewDocument(store); },
+    }));
+  }
+
+  fileItems.push(
     await MenuItem.new({
       id: 'file-new',
       text: 'New Window',
@@ -83,24 +94,36 @@ export async function setupAppMenu(store: EditorStore): Promise<void> {
       id: 'file-open',
       text: 'Open…',
       accelerator: 'CmdOrCtrl+O',
-      action: async () => {
-        if (store.filePath || store.isDirty) {
-          // Current window has content — pick file, then open in new window
-          const selected = await showOpenDialog({ multiple: false, filters: FILE_FILTERS });
-          if (!selected) return;
-          void invoke('open_new_window', { path: selected as string });
-        } else {
-          void openFile(store);
-        }
-      },
+      action: () => { void requestOpenDocument(store); },
     }),
     openRecentSubmenu,
     await MenuItem.new({
       id: 'file-close',
-      text: 'Close',
+      text: inTabsMode && store.tabCount > 1 ? 'Close Tab' : 'Close',
       accelerator: 'CmdOrCtrl+W',
-      action: () => { void closeFile(store); },
+      action: () => { void requestCloseDocument(store); },
     }),
+  );
+
+  if (inTabsMode) {
+    fileItems.push(
+      await PredefinedMenuItem.new({ item: 'Separator' }),
+      await MenuItem.new({
+        id: 'file-next-tab',
+        text: 'Next Tab',
+        accelerator: 'CmdOrCtrl+Alt+Right',
+        action: () => { store.activateNextTab(); },
+      }),
+      await MenuItem.new({
+        id: 'file-prev-tab',
+        text: 'Previous Tab',
+        accelerator: 'CmdOrCtrl+Alt+Left',
+        action: () => { store.activatePreviousTab(); },
+      }),
+    );
+  }
+
+  fileItems.push(
     await PredefinedMenuItem.new({ item: 'Separator' }),
     await MenuItem.new({
       id: 'file-export-pdf',
@@ -133,7 +156,7 @@ export async function setupAppMenu(store: EditorStore): Promise<void> {
       accelerator: 'CmdOrCtrl+Shift+S',
       action: () => { void saveFileAs(store); },
     }),
-  ];
+  );
 
   if (!isMac) {
     fileItems.push(await PredefinedMenuItem.new({ item: 'Separator' }));

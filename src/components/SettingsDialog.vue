@@ -32,6 +32,26 @@
           </div>
 
           <div class="settings-row">
+            <label>Open documents in</label>
+            <div class="segmented" role="radiogroup" aria-label="Document mode">
+              <button
+                type="button"
+                role="radio"
+                :aria-checked="settingsStore.documentMode === 'windows'"
+                :class="{ active: settingsStore.documentMode === 'windows' }"
+                @click="settingsStore.setDocumentMode('windows')"
+              >Windows</button>
+              <button
+                type="button"
+                role="radio"
+                :aria-checked="settingsStore.documentMode === 'tabs'"
+                :class="{ active: settingsStore.documentMode === 'tabs' }"
+                @click="settingsStore.setDocumentMode('tabs')"
+              >Tabs</button>
+            </div>
+          </div>
+
+          <div class="settings-row">
             <label for="font-size">Font size</label>
             <div class="stepper">
               <button
@@ -284,6 +304,43 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
 }
 
 .stepper-value:focus { outline: none; background: var(--btn-hover); }
+
+.segmented {
+  display: inline-flex;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+  max-width: 58%;
+  flex: 1;
+}
+
+.segmented button {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 0.35rem 0.6rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.segmented button + button {
+  border-left: 1px solid var(--border-color);
+}
+
+.segmented button:hover:not(.active) {
+  background: var(--btn-hover);
+  color: var(--text-color);
+}
+
+.segmented button.active {
+  background: var(--accent-subtle);
+  color: var(--accent-color);
+  font-weight: 500;
+}
 
 .settings-preview {
   margin-top: 0.25rem;
