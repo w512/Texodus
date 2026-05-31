@@ -15,7 +15,9 @@ Download the latest release from the [releases page](https://github.com/w512/tex
 -   **Mermaid Diagrams**: Render flowcharts, sequence diagrams, and other Mermaid graph types inline in the preview, themed to match the active color scheme.
 -   **Local Images**: Embed images with relative (`![](images/foo.png)`) or absolute filesystem paths — resolved against the open document's directory via Tauri's asset protocol.
 -   **Export**: Save the current document as standalone HTML or PDF.
--   **Multi-Window**: Open multiple documents in separate native windows.
+-   **Multi-Document & Multi-Window**: Open multiple documents in a new tabbed interface or separate native windows.
+-   **Auto-Reload**: Files are automatically reloaded when they are changed on disk by external programs.
+-   **Settings Mode**: A dedicated settings mode for easier configuration.
 -   **Dynamic Layouts**: Switch between **Split View**, **Focus Mode** (editor only), and **Preview Only** modes.
 -   **10 Color Schemes**: Default, Solarized, Nord, Monokai, Dracula, GitHub, Catppuccin, Gruvbox, Everforest, and Matrix — each with light and dark variants.
 -   **Document Statistics**: Live word / character / line counts and reading-time estimates.
