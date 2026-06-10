@@ -30,3 +30,6 @@ AGENTS.md
 docs/
 build-mac.sh
 
+
+# npm artifacts — bun.lock is the single lockfile (Tauri config invokes bun)
+package-lock.json
