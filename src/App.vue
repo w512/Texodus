@@ -138,13 +138,15 @@ const windowTitle = computed(() => {
 // ── Window title (§4.5) ───────────────────────────────────────────────────────
 
 watch(
-  [() => editorStore.filePath, () => editorStore.isDirty],
+  [() => editorStore.filePath, () => editorStore.isDirty, () => settingsStore.documentMode],
   () => {
     void updateWindowTitle(editorStore);
-    // Report window status to Rust
+    // Report window status to Rust. documentMode is included so the backend
+    // can route OS "Open With" files into a tab (tabs mode) vs a new window.
     void invoke('report_window_status', {
       path: editorStore.filePath,
-      isDirty: editorStore.isDirty
+      isDirty: editorStore.isDirty,
+      documentMode: settingsStore.documentMode
     }).catch((e) => {
       console.warn('Failed to report window status:', e);
     });

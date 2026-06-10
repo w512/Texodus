@@ -9,12 +9,29 @@ pub struct WindowStatus {
     pub is_dirty: bool,
 }
 
+// Mirrors the frontend `DocumentMode` (`'windows' | 'tabs'`). A global app
+// preference (it lives in shared localStorage), reported by any window so the
+// Rust side can decide whether an incoming file becomes a new window or a tab.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum DocumentMode {
+    Windows,
+    Tabs,
+}
+
+impl Default for DocumentMode {
+    fn default() -> Self {
+        DocumentMode::Windows
+    }
+}
+
 #[derive(Default)]
 pub struct AppState {
     // Maps window_label -> current open file status
     pub window_statuses: Mutex<HashMap<String, WindowStatus>>,
     // Maps window_label -> pending file path to load on startup
     pub pending_files: Mutex<HashMap<String, String>>,
+    // Latest documentMode reported by the frontend (shared across windows).
+    pub document_mode: Mutex<DocumentMode>,
 }
 
 // Monotonic per-process counter for window labels. Replaces the previous
@@ -118,6 +135,25 @@ fn main_window_is_empty(app: &AppHandle, state: &AppState) -> bool {
     }
 }
 
+/// In tabs mode an incoming file should land in an *existing* window as a new
+/// tab. Picks the focused window, falling back to `main`, then any window.
+/// Returns `None` when no window exists yet (cold start).
+fn target_window_label(app: &AppHandle) -> Option<String> {
+    let windows = app.webview_windows();
+    if windows.is_empty() {
+        return None;
+    }
+    for (label, win) in &windows {
+        if win.is_focused().unwrap_or(false) {
+            return Some(label.clone());
+        }
+    }
+    if windows.contains_key("main") {
+        return Some("main".to_string());
+    }
+    windows.keys().next().cloned()
+}
+
 fn handle_incoming_file(app: &AppHandle, path: String) {
     let state = app.state::<AppState>();
 
@@ -138,6 +174,30 @@ fn handle_incoming_file(app: &AppHandle, path: String) {
             let _ = win.set_focus();
         }
         return;
+    }
+
+    // Tabs mode: route the file into an existing window so the frontend opens
+    // it as a new tab (via `requestOpenFromPath`) instead of a new window. On
+    // cold start (no window yet) `target_window_label` returns `None` and we
+    // fall through to the empty-main / new-window logic below.
+    let tabs_mode = state
+        .document_mode
+        .lock()
+        .map(|m| *m == DocumentMode::Tabs)
+        .unwrap_or(false);
+    if tabs_mode {
+        if let Some(label) = target_window_label(app) {
+            if let Ok(mut pending) = state.pending_files.lock() {
+                pending.insert(label.clone(), path);
+            }
+            let _ = app.emit_to(&label, "open-file-pending", ());
+            if let Some(win) = app.get_webview_window(&label) {
+                let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+            }
+            return;
+        }
     }
 
     if main_window_is_empty(app, &state) {
@@ -173,6 +233,7 @@ fn report_window_status(
     window: tauri::Window,
     path: Option<String>,
     is_dirty: bool,
+    document_mode: Option<String>,
     state: tauri::State<'_, AppState>,
 ) {
     if let Ok(mut statuses) = state.window_statuses.lock() {
@@ -180,6 +241,14 @@ fn report_window_status(
             window.label().to_string(),
             WindowStatus { file_path: path, is_dirty },
         );
+    }
+    if let Some(mode) = document_mode {
+        if let Ok(mut current) = state.document_mode.lock() {
+            *current = match mode.as_str() {
+                "tabs" => DocumentMode::Tabs,
+                _ => DocumentMode::Windows,
+            };
+        }
     }
 }
 
