@@ -14,6 +14,18 @@ export function dirname(path: string): string {
   return idx < 0 ? '' : path.substring(0, idx);
 }
 
+/** Forward slashes, no trailing separator — canonical form for comparisons. */
+export function normalizePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
+/** True when `path` equals `parent` or lives anywhere inside it. */
+export function isSameOrInside(path: string, parent: string): boolean {
+  const normalizedPath = normalizePath(path);
+  const normalizedParent = normalizePath(parent);
+  return normalizedPath === normalizedParent || normalizedPath.startsWith(`${normalizedParent}/`);
+}
+
 /** True for Unix-style `/foo` and Windows-style `C:\foo` / `C:/foo`. */
 export function isAbsolutePath(path: string): boolean {
   return path.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(path);

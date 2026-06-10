@@ -71,46 +71,29 @@
       </ul>
     </div>
 
-    <div
+    <SidebarContextMenu
       v-if="contextMenu.visible && contextMenu.node"
-      class="sidebar-context-menu"
-      :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
-      @click.stop
-    >
-      <button type="button" @click="runContextAction('new-file')">New File</button>
-      <button type="button" @click="runContextAction('new-folder')">New Folder</button>
-      <div v-if="!contextMenu.isRoot" class="sidebar-context-menu__separator"></div>
-      <button v-if="!contextMenu.isRoot" type="button" @click="runContextAction('rename')">Rename</button>
-      <button v-if="!contextMenu.isRoot" type="button" class="sidebar-context-menu__danger" @click="runContextAction('delete')">Delete</button>
-      <div class="sidebar-context-menu__separator"></div>
-      <button type="button" @click="runContextAction('reveal')">Reveal in Finder/Explorer</button>
-      <button type="button" @click="runContextAction('copy-relative-path')">Copy Relative Path</button>
-    </div>
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      :is-root="contextMenu.isRoot"
+      @action="runContextAction"
+    />
 
-    <div v-if="namePrompt.visible" class="sidebar-prompt-backdrop" @click.self="closeNamePrompt">
-      <form class="sidebar-prompt" @submit.prevent="confirmNamePrompt">
-        <label class="sidebar-prompt__label" for="sidebar-name-input">{{ namePrompt.title }}</label>
-        <input
-          id="sidebar-name-input"
-          ref="nameInputRef"
-          v-model="namePrompt.value"
-          class="sidebar-prompt__input"
-          type="text"
-          autofocus
-          @keydown.escape.prevent="closeNamePrompt"
-        />
-        <div class="sidebar-prompt__actions">
-          <button type="button" @click="closeNamePrompt">Cancel</button>
-          <button type="submit">OK</button>
-        </div>
-      </form>
-    </div>
+    <SidebarNamePrompt
+      v-if="namePrompt.visible"
+      :title="namePrompt.title"
+      :initial-value="namePrompt.initialValue"
+      @confirm="confirmNamePrompt"
+      @cancel="closeNamePrompt"
+    />
   </aside>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import SidebarNode from './SidebarNode.vue';
+import SidebarContextMenu, { type SidebarContextAction } from './SidebarContextMenu.vue';
+import SidebarNamePrompt from './SidebarNamePrompt.vue';
 import { useEditorStore } from '../stores/editor';
 import { useSettingsStore } from '../stores/settings';
 import { useWorkspaceStore } from '../stores/workspace';
@@ -131,6 +114,7 @@ import {
   revealWorkspaceNode,
 } from '../services/workspaceFileOperations';
 import { type FileTreeNode } from '../stores/workspace';
+import { useSidebarDragDrop } from '../composables/useSidebarDragDrop';
 import { basename } from '../utils/path';
 import iconOpenFolder from '../assets/icons/icons8-open-file-100.png';
 
@@ -140,12 +124,15 @@ const workspaceStore = useWorkspaceStore();
 
 const rootName = computed(() => workspaceStore.rootPath ? basename(workspaceStore.rootPath) : '');
 const lastWorkspaceName = computed(() => settingsStore.lastWorkspacePath ? basename(settingsStore.lastWorkspacePath) : '');
-const nameInputRef = ref<HTMLInputElement | null>(null);
 const sidebarBodyRef = ref<HTMLElement | null>(null);
-const draggingNode = ref<FileTreeNode | null>(null);
-const dropTargetPath = ref<string | null>(null);
-const dragCandidate = ref<{ node: FileTreeNode; startX: number; startY: number } | null>(null);
-let suppressNextClick = false;
+
+const { draggingNode, dropTargetPath, prepareDrag, consumeSuppressedClick } = useSidebarDragDrop({
+  bodyRef: sidebarBodyRef,
+  getRootPath: () => workspaceStore.rootPath,
+  onDragStart: closeContextMenu,
+  onDrop: moveWorkspaceNode,
+});
+
 const contextMenu = reactive<{
   visible: boolean;
   x: number;
@@ -157,10 +144,10 @@ const contextMenu = reactive<{
 const namePrompt = reactive<{
   visible: boolean;
   title: string;
-  value: string;
+  initialValue: string;
   action: 'new-file' | 'new-folder' | 'rename' | null;
   node: FileTreeNode | null;
-}>({ visible: false, title: '', value: '', action: null, node: null });
+}>({ visible: false, title: '', initialValue: '', action: null, node: null });
 
 watch(
   () => editorStore.filePath,
@@ -176,8 +163,6 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('click', closeContextMenu);
   window.removeEventListener('keydown', handleContextMenuKeydown);
-  window.removeEventListener('pointermove', handlePointerDragMove);
-  window.removeEventListener('pointercancel', cancelPointerDrag);
 });
 
 async function openFolder() {
@@ -197,10 +182,7 @@ async function openLastFolder() {
 }
 
 async function toggleDirectory(path: string) {
-  if (suppressNextClick) {
-    suppressNextClick = false;
-    return;
-  }
+  if (consumeSuppressedClick()) return;
   if (!workspaceStore.isExpanded(path)) {
     await loadWorkspaceDirectoryChildren(path);
   }
@@ -252,7 +234,7 @@ function handleContextMenuKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') closeContextMenu();
 }
 
-async function runContextAction(action: string) {
+async function runContextAction(action: SidebarContextAction) {
   const node = contextMenu.node;
   closeContextMenu();
   if (!node) return;
@@ -269,18 +251,13 @@ function openNamePrompt(
   action: 'new-file' | 'new-folder' | 'rename',
   node: FileTreeNode,
   title: string,
-  value: string,
+  initialValue: string,
 ) {
   namePrompt.visible = true;
   namePrompt.title = title;
-  namePrompt.value = value;
+  namePrompt.initialValue = initialValue;
   namePrompt.action = action;
   namePrompt.node = node;
-
-  void nextTick(() => {
-    nameInputRef.value?.focus();
-    nameInputRef.value?.select();
-  });
 }
 
 function closeNamePrompt() {
@@ -289,10 +266,10 @@ function closeNamePrompt() {
   namePrompt.node = null;
 }
 
-async function confirmNamePrompt() {
+async function confirmNamePrompt(rawValue: string) {
   const node = namePrompt.node;
   const action = namePrompt.action;
-  const value = namePrompt.value.trim();
+  const value = rawValue.trim();
   closeNamePrompt();
   if (!node || !action || !value) return;
 
@@ -301,91 +278,8 @@ async function confirmNamePrompt() {
   else if (action === 'rename') await renameWorkspaceNode(node, value);
 }
 
-function prepareDrag(node: FileTreeNode, event: PointerEvent) {
-  closeContextMenu();
-  dragCandidate.value = { node, startX: event.clientX, startY: event.clientY };
-  window.addEventListener('pointermove', handlePointerDragMove);
-  window.addEventListener('pointerup', handlePointerDragEnd, { once: true });
-  window.addEventListener('pointercancel', cancelPointerDrag, { once: true });
-}
-
-function handlePointerDragMove(event: PointerEvent) {
-  const candidate = dragCandidate.value;
-  if (!candidate) return;
-
-  const moved = Math.hypot(event.clientX - candidate.startX, event.clientY - candidate.startY);
-  if (!draggingNode.value && moved < 5) return;
-  if (!draggingNode.value) {
-    draggingNode.value = candidate.node;
-    suppressNextClick = true;
-    document.body.classList.add('is-dragging-sidebar-node');
-  }
-
-  dropTargetPath.value = getDropTargetPathAt(event.clientX, event.clientY);
-}
-
-async function handlePointerDragEnd(event: PointerEvent) {
-  window.removeEventListener('pointermove', handlePointerDragMove);
-  window.removeEventListener('pointercancel', cancelPointerDrag);
-
-  const source = draggingNode.value;
-  const targetPath = getDropTargetPathAt(event.clientX, event.clientY);
-  endDrag();
-  if (!source || !targetPath) return;
-  await moveWorkspaceNode(source, targetPath);
-}
-
-function cancelPointerDrag() {
-  window.removeEventListener('pointermove', handlePointerDragMove);
-  endDrag();
-}
-
-function getDropTargetPathAt(x: number, y: number): string | null {
-  const source = draggingNode.value;
-  const rootPath = workspaceStore.rootPath;
-  if (!source || !rootPath) return null;
-
-  const element = document.elementFromPoint(x, y) as HTMLElement | null;
-  if (!element) return null;
-
-  const button = element.closest<HTMLElement>('[data-sidebar-path]');
-  if (button) {
-    const path = button.dataset.sidebarPath;
-    const kind = button.dataset.sidebarKind;
-    if (path && kind === 'directory' && canDrop(source.path, path)) return path;
-    return null;
-  }
-
-  if (sidebarBodyRef.value?.contains(element) && canDrop(source.path, rootPath)) return rootPath;
-  return null;
-}
-
-function canDrop(sourcePath: string, targetDirectoryPath: string): boolean {
-  return sourcePath !== targetDirectoryPath && !isSameOrInside(targetDirectoryPath, sourcePath);
-}
-
-function endDrag() {
-  dragCandidate.value = null;
-  draggingNode.value = null;
-  dropTargetPath.value = null;
-  document.body.classList.remove('is-dragging-sidebar-node');
-}
-
-function normalizePath(path: string): string {
-  return path.replace(/\\/g, '/').replace(/\/+$/, '');
-}
-
-function isSameOrInside(path: string, parent: string): boolean {
-  const normalizedPath = normalizePath(path);
-  const normalizedParent = normalizePath(parent);
-  return normalizedPath === normalizedParent || normalizedPath.startsWith(`${normalizedParent}/`);
-}
-
 async function openFile(path: string) {
-  if (suppressNextClick) {
-    suppressNextClick = false;
-    return;
-  }
+  if (consumeSuppressedClick()) return;
   await loadFileFromPath(editorStore, path);
   if (editorStore.filePath === path) workspaceStore.setSelectedPath(path);
 }
@@ -549,109 +443,5 @@ async function openFile(path: string) {
 
 .sidebar__state--error {
   color: #d04b4b;
-}
-
-.sidebar-context-menu {
-  position: fixed;
-  z-index: 1000;
-  min-width: 190px;
-  padding: 0.3rem;
-  border: 1px solid var(--border-color);
-  border-radius: 9px;
-  background: var(--bg-color);
-  color: var(--text-color);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
-}
-
-.sidebar-context-menu button {
-  width: 100%;
-  display: block;
-  padding: 0.45rem 0.55rem;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 0.8125rem;
-  text-align: left;
-  cursor: pointer;
-}
-
-.sidebar-context-menu button:hover {
-  background: var(--btn-hover);
-}
-
-.sidebar-context-menu__danger {
-  color: #d04b4b !important;
-}
-
-.sidebar-context-menu__separator {
-  height: 1px;
-  margin: 0.25rem 0.2rem;
-  background: var(--border-color);
-}
-
-.sidebar-prompt-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.25);
-}
-
-.sidebar-prompt {
-  width: min(360px, calc(100vw - 2rem));
-  padding: 1rem;
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  background: var(--bg-color);
-  color: var(--text-color);
-  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.28);
-}
-
-.sidebar-prompt__label {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-size: 0.875rem;
-  font-weight: 700;
-}
-
-.sidebar-prompt__input {
-  width: 100%;
-  padding: 0.5rem 0.6rem;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-secondary);
-  color: var(--text-color);
-  font: inherit;
-}
-
-.sidebar-prompt__input:focus {
-  outline: 2px solid var(--accent-subtle);
-  border-color: var(--accent-color);
-}
-
-.sidebar-prompt__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  margin-top: 0.85rem;
-}
-
-.sidebar-prompt__actions button {
-  padding: 0.42rem 0.7rem;
-  border: 1px solid var(--border-color);
-  border-radius: 7px;
-  background: var(--bg-secondary);
-  color: var(--text-color);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.sidebar-prompt__actions button:hover {
-  background: var(--btn-hover);
 }
 </style>

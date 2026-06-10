@@ -5,7 +5,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useEditorStore } from '../stores/editor';
 import { type FileTreeNode, useWorkspaceStore } from '../stores/workspace';
 import { promptUnsavedChanges } from '../composables/useUnsavedPrompt';
-import { basename, dirname, resolveLocalPath } from '../utils/path';
+import { basename, dirname, isSameOrInside, normalizePath, resolveLocalPath } from '../utils/path';
 import { expandAndLoadParentDirectories, refreshWorkspaceTree } from './workspaceService';
 
 async function ensurePathDoesNotExist(path: string): Promise<boolean> {
@@ -37,16 +37,6 @@ async function confirmReplaceExisting(path: string): Promise<boolean> {
 
 function targetDirectory(node: FileTreeNode): string {
   return node.kind === 'directory' ? node.path : dirname(node.path);
-}
-
-function normalizePath(path: string): string {
-  return path.replace(/\\/g, '/').replace(/\/+$/, '');
-}
-
-function isSameOrInside(path: string, parent: string): boolean {
-  const normalizedPath = normalizePath(path);
-  const normalizedParent = normalizePath(parent);
-  return normalizedPath === normalizedParent || normalizedPath.startsWith(`${normalizedParent}/`);
 }
 
 function removeExpandedPathPrefix(path: string): void {
@@ -164,7 +154,6 @@ export async function renameWorkspaceNode(node: FileTreeNode, nextName: string):
   const nextPath = resolveLocalPath(dirname(node.path), nextName);
   if (!(await ensurePathDoesNotExist(nextPath))) return;
 
-  const editorStore = useEditorStore();
   try {
     await rename(node.path, nextPath);
     replaceExpandedPathPrefix(node.path, nextPath);

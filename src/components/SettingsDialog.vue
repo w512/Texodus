@@ -69,54 +69,28 @@
 
           <div class="settings-row">
             <label for="font-size">Font size</label>
-            <div class="stepper">
-              <button
-                class="stepper-btn"
-                :disabled="settingsStore.fontSize <= FONT_SIZE_MIN"
-                aria-label="Decrease font size"
-                @click="settingsStore.setFontSize(settingsStore.fontSize - 1)"
-              >−</button>
-              <select
-                id="font-size"
-                class="stepper-value"
-                :value="settingsStore.fontSize"
-                @change="settingsStore.setFontSize(Number(($event.target as HTMLSelectElement).value))"
-              >
-                <option v-for="s in FONT_SIZES" :key="s" :value="s">{{ s }} pt</option>
-              </select>
-              <button
-                class="stepper-btn"
-                :disabled="settingsStore.fontSize >= FONT_SIZE_MAX"
-                aria-label="Increase font size"
-                @click="settingsStore.setFontSize(settingsStore.fontSize + 1)"
-              >+</button>
-            </div>
+            <SettingsStepper
+              id="font-size"
+              label="font size"
+              :model-value="settingsStore.fontSize"
+              :options="FONT_SIZES"
+              :step="1"
+              :format="(s: number) => `${s} pt`"
+              @update:model-value="settingsStore.setFontSize($event)"
+            />
           </div>
 
           <div class="settings-row">
             <label for="line-height">Line height</label>
-            <div class="stepper">
-              <button
-                class="stepper-btn"
-                :disabled="settingsStore.lineHeight <= LINE_HEIGHT_MIN"
-                aria-label="Decrease line height"
-                @click="settingsStore.setLineHeight(settingsStore.lineHeight - 0.05)"
-              >−</button>
-              <select
-                id="line-height"
-                class="stepper-value"
-                :value="settingsStore.lineHeight"
-                @change="settingsStore.setLineHeight(Number(($event.target as HTMLSelectElement).value))"
-              >
-                <option v-for="h in LINE_HEIGHTS" :key="h" :value="h">{{ h.toFixed(2) }}</option>
-              </select>
-              <button
-                class="stepper-btn"
-                :disabled="settingsStore.lineHeight >= LINE_HEIGHT_MAX"
-                aria-label="Increase line height"
-                @click="settingsStore.setLineHeight(settingsStore.lineHeight + 0.05)"
-              >+</button>
-            </div>
+            <SettingsStepper
+              id="line-height"
+              label="line height"
+              :model-value="settingsStore.lineHeight"
+              :options="LINE_HEIGHTS"
+              :step="0.05"
+              :format="(h: number) => h.toFixed(2)"
+              @update:model-value="settingsStore.setLineHeight($event)"
+            />
           </div>
 
           <div class="settings-preview">
@@ -133,28 +107,10 @@
 
           <div class="settings-section">
             <span class="section-label">Color scheme</span>
-            <div class="scheme-grid">
-              <button
-                v-for="scheme in COLOR_SCHEMES"
-                :key="scheme.id"
-                class="scheme-swatch"
-                :class="{ selected: settingsStore.colorScheme === scheme.id }"
-                :title="scheme.label"
-                :style="{
-                  '--sl': scheme.light.bgColor,
-                  '--sd': scheme.dark.bgColor,
-                  '--sa': scheme.light.accentColor,
-                }"
-                @click="settingsStore.setColorScheme(scheme.id)"
-              >
-                <div class="swatch-halves">
-                  <div class="swatch-h light-h"></div>
-                  <div class="swatch-h dark-h"></div>
-                </div>
-                <div class="swatch-accent"></div>
-                <span class="swatch-name">{{ scheme.label }}</span>
-              </button>
-            </div>
+            <ColorSchemePicker
+              :model-value="settingsStore.colorScheme"
+              @update:model-value="settingsStore.setColorScheme($event)"
+            />
           </div>
         </div>
       </div>
@@ -163,52 +119,26 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { onMounted, onUnmounted, watch } from 'vue';
 import {
   useSettingsStore,
   EDITOR_FONTS,
   PREVIEW_FONTS,
   FONT_SIZES,
-  FONT_SIZE_MIN,
-  FONT_SIZE_MAX,
   LINE_HEIGHTS,
-  LINE_HEIGHT_MIN,
-  LINE_HEIGHT_MAX,
 } from '../stores/settings';
-import { COLOR_SCHEMES } from '../themes';
-import { invoke } from '@tauri-apps/api/core';
+import SettingsStepper from './SettingsStepper.vue';
+import ColorSchemePicker from './ColorSchemePicker.vue';
+import { useSystemFonts } from '../composables/useSystemFonts';
 
 const settingsStore = useSettingsStore();
-const systemFontsLoading = ref(false);
-const systemFontsError = ref(false);
-
-const quoteFontFamily = (name: string) => `'${name.replace(/'/g, "\\'")}'`;
-const systemFontOptions = computed(() => {
-  const bundledLabels = new Set([...EDITOR_FONTS, ...PREVIEW_FONTS].map(f => f.label));
-  return settingsStore.systemFonts
-    .filter(name => !bundledLabels.has(name))
-    .map(name => ({ label: name, value: quoteFontFamily(name) }));
-});
-const editorSystemFontOptions = computed(() =>
-  systemFontOptions.value.map(f => ({ ...f, value: `${f.value}, monospace` })),
-);
-const previewSystemFontOptions = computed(() =>
-  systemFontOptions.value.map(f => ({ ...f, value: `${f.value}, system-ui, sans-serif` })),
-);
-
-async function loadSystemFonts() {
-  if (settingsStore.systemFontsLoaded || systemFontsLoading.value) return;
-  systemFontsLoading.value = true;
-  systemFontsError.value = false;
-  try {
-    settingsStore.setSystemFonts(await invoke<string[]>('list_system_fonts'));
-  } catch (e) {
-    console.warn('Failed to list system fonts:', e);
-    systemFontsError.value = true;
-  } finally {
-    systemFontsLoading.value = false;
-  }
-}
+const {
+  loading: systemFontsLoading,
+  error: systemFontsError,
+  editorSystemFontOptions,
+  previewSystemFontOptions,
+  loadSystemFonts,
+} = useSystemFonts();
 
 const close = () => { settingsStore.setSettingsVisible(false); };
 
@@ -352,53 +282,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
   text-align: right;
 }
 
-.stepper {
-  display: flex;
-  align-items: stretch;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  overflow: hidden;
-  background: var(--bg-secondary);
-  max-width: 58%;
-  flex: 1;
-}
-
-.stepper-btn {
-  width: 28px;
-  background: transparent;
-  border: none;
-  color: var(--text-color);
-  font-size: 1rem;
-  line-height: 1;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.stepper-btn:hover:not(:disabled) {
-  background: var(--btn-hover);
-  color: var(--accent-color);
-}
-
-.stepper-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.stepper-value {
-  flex: 1;
-  background: transparent;
-  border: none;
-  border-left: 1px solid var(--border-color);
-  border-right: 1px solid var(--border-color);
-  padding: 0.35rem 0.4rem;
-  color: var(--text-color);
-  font-size: 0.8125rem;
-  text-align: center;
-  cursor: pointer;
-}
-
-.stepper-value:focus { outline: none; background: var(--btn-hover); }
-
 .segmented {
   display: inline-flex;
   background: var(--bg-secondary);
@@ -485,65 +368,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
   font-size: 0.8125rem;
   color: var(--text-muted);
   font-weight: 500;
-}
-
-.scheme-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 6px;
-}
-
-.scheme-swatch {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  cursor: pointer;
-  border: 2px solid transparent;
-  border-radius: 7px;
-  overflow: hidden;
-  padding: 0;
-  background: none;
-  transition: border-color 0.15s, transform 0.1s;
-}
-
-.scheme-swatch:hover {
-  transform: scale(1.04);
-}
-
-.scheme-swatch.selected {
-  border-color: var(--accent-color);
-}
-
-.swatch-halves {
-  display: flex;
-  height: 32px;
-}
-
-.swatch-h.light-h {
-  flex: 1;
-  background: var(--sl);
-}
-
-.swatch-h.dark-h {
-  flex: 1;
-  background: var(--sd);
-}
-
-.swatch-accent {
-  height: 3px;
-  background: var(--sa);
-}
-
-.swatch-name {
-  font-size: 0.5625rem;
-  text-align: center;
-  padding: 3px 2px;
-  color: var(--text-color);
-  background: var(--bg-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.2;
 }
 
 .fade-enter-active,
