@@ -10,15 +10,16 @@
  * The view's lifecycle is managed by TextEditor.vue; this module exposes
  * pure factory + theme functions.
  */
-import { EditorState, Compartment, EditorSelection } from '@codemirror/state';
+import { EditorState, Compartment, EditorSelection, StateField, StateEffect, RangeSetBuilder } from '@codemirror/state';
 import {
   EditorView,
   keymap,
   highlightActiveLine,
   drawSelection,
   dropCursor,
+  Decoration,
 } from '@codemirror/view';
-import type { KeyBinding } from '@codemirror/view';
+import type { KeyBinding, DecorationSet } from '@codemirror/view';
 import {
   history,
   defaultKeymap,
@@ -34,6 +35,39 @@ import {
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
+
+// ── Search match highlighting ──────────────────────────────────────────────
+// The app-level SearchBar pushes match ranges in via this effect; we render
+// them with the .cm-searchMatch / .cm-searchMatch-selected classes the theme
+// styles. We can't reuse @codemirror/search's own highlighter — it only paints
+// while its search panel is open, which this app never uses.
+export const setSearchHighlights = StateEffect.define<{
+  matches: { from: number; to: number }[];
+  current: number;
+}>();
+
+const searchMatchMark = Decoration.mark({ class: 'cm-searchMatch' });
+const searchCurrentMark = Decoration.mark({ class: 'cm-searchMatch cm-searchMatch-selected' });
+
+export const searchHighlightField = StateField.define<DecorationSet>({
+  create() { return Decoration.none; },
+  update(deco, tr) {
+    deco = deco.map(tr.changes);
+    for (const effect of tr.effects) {
+      if (effect.is(setSearchHighlights)) {
+        const builder = new RangeSetBuilder<Decoration>();
+        const { matches, current } = effect.value;
+        for (let i = 0; i < matches.length; i++) {
+          const m = matches[i];
+          if (m.from < m.to) builder.add(m.from, m.to, i === current ? searchCurrentMark : searchMatchMark);
+        }
+        deco = builder.finish();
+      }
+    }
+    return deco;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
 
 // ── Smart list continuation ───────────────────────────────────────────────
 // Matches a list line: indent + optional blockquote prefix(es) + bullet
@@ -129,6 +163,17 @@ function buildTheme(opts: ThemeOpts) {
       '.cm-activeLine': {
         background: 'var(--active-line-bg, transparent)',
       },
+      // Search match highlight. Defined in the (regular) theme so it overrides
+      // @codemirror/search's base theme; colors come from the user-configurable
+      // --search-highlight* vars (ThemeProvider), shared with the preview.
+      '.cm-searchMatch': {
+        backgroundColor: 'var(--search-highlight-soft)',
+        borderRadius: '2px',
+      },
+      '.cm-searchMatch-selected': {
+        backgroundColor: 'var(--search-highlight)',
+        color: 'var(--search-highlight-fg)',
+      },
       '.cm-gutters': { display: 'none' },
     },
     { dark: opts.dark },
@@ -163,6 +208,7 @@ export function createMarkdownState(opts: CreateStateOpts): EditorState {
       highlightActiveLine(),
       bracketMatching(),
       closeBrackets(),
+      searchHighlightField,
       EditorState.allowMultipleSelections.of(true),
       EditorView.lineWrapping,
       indentUnit.of('  '),

@@ -32,9 +32,22 @@ const resolvedTheme = computed(() => {
   return settingsStore.themeMode;
 });
 
+function hexToRgb(hex) {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec((hex || '').trim());
+  const n = m ? parseInt(m[1], 16) : 0xffd54a;
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+// Perceived luminance → readable text color on the solid (current-match) color.
+function readableOn({ r, g, b }) {
+  const l = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return l > 0.6 ? '#1a1d23' : '#ffffff';
+}
+
 const themeStyle = computed(() => {
   const scheme = COLOR_SCHEMES.find(s => s.id === settingsStore.colorScheme) ?? COLOR_SCHEMES[0];
   const t = scheme[resolvedTheme.value];
+  const hl = hexToRgb(settingsStore.searchHighlightColor);
   return {
     '--bg-color':               t.bgColor,
     '--bg-secondary':           t.bgSecondary,
@@ -62,6 +75,9 @@ const themeStyle = computed(() => {
     '--syntax-punctuation':     t.syntaxPunctuation,
     '--editor-font':            settingsStore.editorFont,
     '--preview-font':           settingsStore.previewFont,
+    '--search-highlight':       `rgb(${hl.r}, ${hl.g}, ${hl.b})`,
+    '--search-highlight-soft':  `rgba(${hl.r}, ${hl.g}, ${hl.b}, 0.35)`,
+    '--search-highlight-fg':    readableOn(hl),
   };
 });
 </script>

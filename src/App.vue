@@ -13,6 +13,7 @@
         @format="handleFormat"
       />
       <TabBar />
+      <SearchBar />
       <div class="app-main">
         <Transition name="sidebar-slide">
           <div
@@ -46,6 +47,7 @@ import { useSettingsStore } from './stores/settings';
 import { useEditorStore } from './stores/editor';
 import TitleBar from './components/TitleBar.vue';
 import TabBar from './components/TabBar.vue';
+import SearchBar from './components/SearchBar.vue';
 import Sidebar from './components/Sidebar.vue';
 import EditorLayout from './components/EditorLayout.vue';
 import TextEditor from './components/TextEditor.vue';
@@ -357,6 +359,15 @@ body.is-resizing-sidebar {
   width: 0;
   min-width: 0;
   opacity: 0;
+}
+
+/* Search match highlights in the rendered preview (CSS Custom Highlight API). */
+::highlight(texodus-search) {
+  background-color: var(--search-highlight-soft);
+}
+::highlight(texodus-search-current) {
+  background-color: var(--search-highlight);
+  color: var(--search-highlight-fg);
 }
 
 </style>

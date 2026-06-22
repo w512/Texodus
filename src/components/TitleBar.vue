@@ -20,6 +20,16 @@
         <span class="tb-icon" :style="{ '--icon': `url(${iconSidebar})` }"></span>
       </button>
 
+      <button
+        id="btn-search"
+        class="tb-btn icon-only"
+        :class="{ active: searchOpen }"
+        :title="searchOpen ? 'Close Search (Cmd/Ctrl+F)' : 'Find (Cmd/Ctrl+F)'"
+        @click="toggleSearch"
+      >
+        <span class="tb-icon" :style="{ '--icon': `url(${iconSearch})` }"></span>
+      </button>
+
       <div class="layout-switcher">
         <button
           v-for="mode in layoutModes"
@@ -52,6 +62,7 @@ import SettingsMenu from './SettingsMenu.vue';
 import FormatMenu from './FormatMenu.vue';
 import DocumentStatsMenu from './DocumentStatsMenu.vue';
 import ExportMenu from './ExportMenu.vue';
+import { useDocumentSearch } from '../composables/useDocumentSearch';
 
 import iconLayoutSplit from '../assets/icons/icons8-view-stream-100.png';
 import iconLayoutFocus from '../assets/icons/icons8-pencil-drawing-100.png';
@@ -60,6 +71,7 @@ import iconThemeSystem from '../assets/icons/icons8-operating-system-100.png';
 import iconThemeLight from '../assets/icons/icons8-sun-100.png';
 import iconThemeDark from '../assets/icons/icons8-do-not-disturb-ios-100.png';
 import iconSidebar from '../assets/icons/icons8-sidebar-100.png';
+import iconSearch from '../assets/icons/icons8-search-100.png';
 
 const props = defineProps({
   layoutMode: String,
@@ -69,6 +81,9 @@ const props = defineProps({
 });
 
 defineEmits(['toggle-layout', 'toggle-sidebar', 'cycle-theme', 'format']);
+
+const { isOpen: searchOpen, open: openSearch, close: closeSearch } = useDocumentSearch();
+const toggleSearch = () => { if (searchOpen.value) closeSearch(); else openSearch(); };
 
 const layoutModes = [
   { value: 'split', label: 'Split View', icon: iconLayoutSplit },

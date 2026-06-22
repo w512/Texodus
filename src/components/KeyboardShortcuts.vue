@@ -4,9 +4,11 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue';
 import { useMarkdownPreview } from '../composables/useMarkdownPreview';
+import { useDocumentSearch } from '../composables/useDocumentSearch';
 import { applyFormat } from "../composables/useFormatting";
 
 const { getEditorView } = useMarkdownPreview();
+const { open: openSearch } = useDocumentSearch();
 const isMac = navigator.userAgent.includes('Macintosh');
 
 interface ShortcutKey {
@@ -79,7 +81,21 @@ function modsMatch(e: KeyboardEvent, key: ShortcutKey): boolean {
     && !!e.altKey   === !!key.alt;
 }
 
+// Find (Cmd/Ctrl+F) opens the app-level search bar (useDocumentSearch). Owned
+// here — not via the editor's own Mod-f binding — so it works in every layout
+// mode, including preview-only where the editor isn't mounted.
+const FIND_KEY: { mac: ShortcutKey; win: ShortcutKey } = {
+  mac: { meta: true, code: 'KeyF' },
+  win: { ctrl: true, code: 'KeyF' },
+};
+
 const handleKeydown = (e: KeyboardEvent) => {
+  if (modsMatch(e, isMac ? FIND_KEY.mac : FIND_KEY.win)) {
+    e.preventDefault();
+    openSearch();
+    return;
+  }
+
   const view = getEditorView();
   if (!view || !view.hasFocus) return;
 

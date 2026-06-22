@@ -113,6 +113,17 @@
             />
           </div>
 
+          <div class="settings-row">
+            <label for="search-color">Search highlight</label>
+            <input
+              id="search-color"
+              type="color"
+              class="color-input"
+              :value="settingsStore.searchHighlightColor"
+              @input="settingsStore.setSearchHighlightColor(($event.target as HTMLInputElement).value)"
+            />
+          </div>
+
           <div class="settings-preview">
             <span class="section-label">Fonts preview</span>
             <div class="fonts-preview">
@@ -293,6 +304,18 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
   outline: 2px solid var(--accent-subtle);
   border-color: var(--accent-color);
 }
+
+.color-input {
+  width: 46px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  cursor: pointer;
+}
+.color-input::-webkit-color-swatch-wrapper { padding: 3px; }
+.color-input::-webkit-color-swatch { border: none; border-radius: 4px; }
 
 .settings-hint {
   margin-top: -0.35rem;

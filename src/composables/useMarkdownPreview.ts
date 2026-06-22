@@ -232,6 +232,7 @@ export function useMarkdownPreview() {
       cachedAnchors = null;
     },
     getEditorView(): EditorView | null { return editorView; },
+    getPreviewElement(): HTMLElement | null { return previewEl; },
 
     /** Editor → Preview sync. Called from the editor's scroll handler. */
     syncFromEditor() {

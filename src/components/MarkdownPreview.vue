@@ -13,6 +13,7 @@ import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue';
 import { useEditorStore } from '../stores/editor';
 import { useSettingsStore } from '../stores/settings';
 import { useMarkdownPreview } from '../composables/useMarkdownPreview';
+import { useDocumentSearch } from '../composables/useDocumentSearch';
 import { sanitizeMarkdownHtml } from '../services/markdownSanitizer';
 import { renderMermaidBlocks } from '../services/mermaidRenderer';
 import { marked, type Token } from 'marked';
@@ -22,6 +23,7 @@ import { dirname, hasUrlScheme, isAbsolutePath, resolveLocalPath } from '../util
 const editorStore = useEditorStore();
 const settingsStore = useSettingsStore();
 const { setPreviewElement, syncFromPreview } = useMarkdownPreview();
+const { refresh: refreshSearch } = useDocumentSearch();
 const previewRef = ref<HTMLElement | null>(null);
 
 // Debounce rendering (§6.2)
@@ -120,6 +122,10 @@ const renderMarkdown = async () => {
     await import('../themes/prism.css');
     Prism.default.highlightAllUnder(previewRef.value);
   }
+
+  // Re-apply search highlights against the freshly rendered DOM — the previous
+  // Range objects are detached once innerHTML is replaced.
+  refreshSearch();
 };
 
 watch(
