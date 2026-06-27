@@ -167,6 +167,13 @@ function collectPreviewRanges(root: HTMLElement, re: RegExp): Range[] {
 
 function clearPreviewHighlights(): void {
   if (!highlightsApi) return;
+  // Set empty Highlight objects first to force a visual repaint with zero
+  // ranges, then delete from the registry for cleanup. Some webviews don't
+  // trigger a repaint on `delete` alone.
+  if (HighlightCtor) {
+    highlightsApi.set(HL_ALL, new HighlightCtor());
+    highlightsApi.set(HL_CURRENT, new HighlightCtor());
+  }
   highlightsApi.delete(HL_ALL);
   highlightsApi.delete(HL_CURRENT);
 }
