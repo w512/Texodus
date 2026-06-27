@@ -8,7 +8,9 @@
  */
 import { watch } from 'vue';
 import { readTextFile } from '@tauri-apps/plugin-fs';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { useEditorStore } from '../stores/editor';
+import { useSettingsStore } from '../stores/settings';
 
 type EditorStore = ReturnType<typeof useEditorStore>;
 
@@ -23,7 +25,16 @@ interface SavedSession {
   activeFilePath: string | null;
 }
 
+function canUseTabSession(): boolean {
+  try {
+    return getCurrentWindow().label === 'main' && useSettingsStore().documentMode === 'tabs';
+  } catch {
+    return false;
+  }
+}
+
 export function saveSession(store: EditorStore): void {
+  if (!canUseTabSession()) return;
   const tabs: SavedTab[] = store.tabs
     .filter((t) => t.filePath)
     .map((t) => ({ filePath: t.filePath! }));
@@ -40,6 +51,8 @@ export function saveSession(store: EditorStore): void {
 }
 
 export async function restoreSession(store: EditorStore): Promise<void> {
+  if (!canUseTabSession()) return;
+
   let session: SavedSession;
   try {
     const raw = localStorage.getItem(SESSION_KEY);
@@ -52,8 +65,6 @@ export async function restoreSession(store: EditorStore): Promise<void> {
   if (!session.tabs || session.tabs.length === 0) return;
 
   // Load each saved file into a tab.
-  const loadedTabs: { id: string; filePath: string }[] = [];
-
   for (let i = 0; i < session.tabs.length; i++) {
     const filePath = session.tabs[i].filePath;
     try {
@@ -64,7 +75,6 @@ export async function restoreSession(store: EditorStore): Promise<void> {
       } else {
         store.addTab({ content, filePath, isDirty: false });
       }
-      loadedTabs.push({ id: store.activeTabId, filePath });
     } catch {
       // File may have been moved/deleted since last session — skip it.
     }
