@@ -32,8 +32,18 @@ settings.$subscribe(() => settings.persist(), { detached: true });
 // documentMode, which the Rust side relies on to route "Open With" files).
 // No feedback loop: re-persisting an identical payload doesn't change the
 // stored value, and `storage` only fires on actual changes.
-window.addEventListener('storage', (e) => {
+function onStorageChange(e: StorageEvent) {
   if (e.key === SETTINGS_STORAGE_KEY) settings.reloadFromStorage();
-});
+}
+window.addEventListener('storage', onStorageChange);
+
+// HMR cleanup: in dev mode, hot-reloading this module would otherwise
+// accumulate duplicate `storage` listeners. `import.meta.hot` is only
+// defined in Vite's dev server, so this block is tree-shaken in production.
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    window.removeEventListener('storage', onStorageChange);
+  });
+}
 
 app.mount('#app');
