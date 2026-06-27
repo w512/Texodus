@@ -76,6 +76,17 @@ describe('useDocumentSearch', () => {
       s.close();
       expect(s.isOpen.value).toBe(false);
     });
+
+    it('close clears matches and count', () => {
+      views.push(setView('foo bar foo'));
+      const s = getSearch();
+      s.open();
+      s.setQuery('foo');
+      expect(s.matchCount.value).toBe(2);
+      s.close();
+      expect(s.matchCount.value).toBe(0);
+      expect(s.currentIndex.value).toBe(0);
+    });
   });
 
   describe('plain text search', () => {
