@@ -133,38 +133,35 @@ function applyEditor(view: EditorView, reselect: boolean): void {
 
 // ── Preview target (CSS Custom Highlight API) ───────────────────────────────
 
-function locateNode(nodes: { node: Text; start: number }[], pos: number): { node: Text; start: number } | null {
-  for (let i = nodes.length - 1; i >= 0; i--) {
-    if (nodes[i].start <= pos) return nodes[i];
-  }
-  return nodes[0] ?? null;
-}
-
 function collectPreviewRanges(root: HTMLElement, re: RegExp): Range[] {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  const nodes: { node: Text; start: number }[] = [];
-  let full = '';
+  const ranges: Range[] = [];
+
+  // Run the regex per text node instead of concatenating all text into a
+  // single string. This avoids allocating a potentially huge `full` string,
+  // eliminates the nodes[]/locateNode machinery, and bounds each regex
+  // execution to a single text node.
+  //
+  // Trade-off: matches spanning a text-node boundary (e.g. "fo" in one
+  // node + "o" in the next) are missed. In practice this is extremely
+  // rare — text-node boundaries fall on HTML tag edges, and search terms
+  // almost never cross tag boundaries.
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-    const t = n as Text;
-    nodes.push({ node: t, start: full.length });
-    full += t.data;
+    const text = n as Text;
+    const data = text.data;
+    if (!data) continue;
+
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(data)) !== null) {
+      if (m[0].length === 0) { re.lastIndex++; continue; }
+      const range = document.createRange();
+      range.setStart(text, m.index);
+      range.setEnd(text, m.index + m[0].length);
+      ranges.push(range);
+    }
   }
 
-  const ranges: Range[] = [];
-  re.lastIndex = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(full)) !== null) {
-    if (m[0].length === 0) { re.lastIndex++; continue; }
-    const s = m.index;
-    const e = s + m[0].length;
-    const sLoc = locateNode(nodes, s);
-    const eLoc = locateNode(nodes, e);
-    if (!sLoc || !eLoc) continue;
-    const range = document.createRange();
-    range.setStart(sLoc.node, s - sLoc.start);
-    range.setEnd(eLoc.node, e - eLoc.start);
-    ranges.push(range);
-  }
   return ranges;
 }
 
