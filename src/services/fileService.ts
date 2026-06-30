@@ -9,7 +9,8 @@ import { refreshWorkspaceTreeIfPathInside } from './workspaceService';
 import { allowAssetDirectoryForFile } from './assetScopeService';
 import { basename } from '../utils/path';
 import { showToast } from '../utils/toast';
-import { markFileWritten, flushPendingSave } from '../composables/useAutoSave';
+import { markFileWritten } from '../utils/writeSuppression';
+import { flushPendingSave } from '../composables/useAutoSave';
 
 export { showToast };
 

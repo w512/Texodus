@@ -7,9 +7,9 @@
  * `flushPendingSave()` can be called before destructive actions (tab switch,
  * close, open) to immediately persist any pending changes.
  *
- * Write suppression: `markFileWritten(path)` records the timestamp so the
- * file watcher can ignore events triggered by our own writes.
- *
+ * Write suppression is handled by the separate `writeSuppression` module so
+ * that both auto-save and manual saves share the same suppression registry
+ * without coupling the file watcher to this composable.
  */
 
 import { watch, onUnmounted, type WatchStopHandle } from 'vue';
@@ -17,11 +17,11 @@ import { writeTextFile } from '@tauri-apps/plugin-fs';
 import { useEditorStore } from '../stores/editor';
 import { useSettingsStore } from '../stores/settings';
 import { showToast } from '../utils/toast';
+import { markFileWritten } from '../utils/writeSuppression';
 
 type EditorStore = ReturnType<typeof useEditorStore>;
 
 const AUTOSAVE_DEBOUNCE_MS = 1500;
-const WRITE_SUPPRESSION_MS = 4000;
 
 // ── Module-level state (singleton) ─────────────────────────────────────────────
 
@@ -29,25 +29,6 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingPath: string | null = null;
 let pendingContent: string | null = null;
 let isFlushing = false;
-
-/** Map of path → timestamp of last app-initiated write. */
-const recentWrites = new Map<string, number>();
-
-/** Record that the app just wrote to `path`, so the watcher can suppress. */
-export function markFileWritten(path: string): void {
-  recentWrites.set(path, Date.now());
-}
-
-/** True if `path` was written by the app within the suppression window. */
-export function wasRecentlyWritten(path: string): boolean {
-  const ts = recentWrites.get(path);
-  if (!ts) return false;
-  if (Date.now() - ts > WRITE_SUPPRESSION_MS) {
-    recentWrites.delete(path);
-    return false;
-  }
-  return true;
-}
 
 /** Check if there is a pending auto-save for the current tab. */
 export function hasPendingSave(): boolean {

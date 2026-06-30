@@ -4,7 +4,7 @@ import { useEditorStore, type Tab } from '../stores/editor';
 import { basename, dirname } from '../utils/path';
 import { promptUnsavedChanges } from './useUnsavedPrompt';
 import { saveFile, showToast, updateWindowTitle } from '../services/fileService';
-import { wasRecentlyWritten } from './useAutoSave';
+import { wasRecentlyWritten } from '../utils/writeSuppression';
 
 type EditorStore = ReturnType<typeof useEditorStore>;
 
