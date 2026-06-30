@@ -2,6 +2,7 @@ import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import App from './App.vue';
 import { useSettingsStore, SETTINGS_STORAGE_KEY } from './stores/settings';
+import { createCrossWindowSync, broadcastChange } from './utils/crossWindowSync';
 
 // Bundled fonts (no external CDN, works offline) — selected weights only
 // to keep the bundle lean.
@@ -27,22 +28,27 @@ app.use(pinia);
 const settings = useSettingsStore(pinia);
 settings.$subscribe(() => settings.persist(), { detached: true });
 
-// Cross-window sync: `storage` fires in the *other* windows when one window
-// persists. Re-reading keeps every window's settings consistent (notably
-// documentMode, which the Rust side relies on to route "Open With" files).
-// No feedback loop: re-persisting an identical payload doesn't change the
-// stored value, and `storage` only fires on actual changes.
-function onStorageChange(e: StorageEvent) {
-  if (e.key === SETTINGS_STORAGE_KEY) settings.reloadFromStorage();
-}
-window.addEventListener('storage', onStorageChange);
+// Cross-window sync: BroadcastChannel for instant notification + storage
+// event fallback. When another window persists settings, this window
+// re-reads from localStorage to stay consistent (notably documentMode,
+// which the Rust side relies on to route "Open With" files).
+const SYNC_CHANNEL = 'texodus-settings-sync';
+const syncCleanup = createCrossWindowSync({
+  channelName: SYNC_CHANNEL,
+  storageKey: SETTINGS_STORAGE_KEY,
+  onSync: () => settings.reloadFromStorage(),
+});
+
+// Expose broadcastChange so settings.persist() can notify other windows.
+// Stored on the store instance as a non-reactive method.
+(settings as unknown as { _broadcastSync: () => void })._broadcastSync = () =>
+  broadcastChange(SYNC_CHANNEL);
 
 // HMR cleanup: in dev mode, hot-reloading this module would otherwise
-// accumulate duplicate `storage` listeners. `import.meta.hot` is only
-// defined in Vite's dev server, so this block is tree-shaken in production.
+// accumulate duplicate listeners.
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
-    window.removeEventListener('storage', onStorageChange);
+    syncCleanup();
   });
 }
 

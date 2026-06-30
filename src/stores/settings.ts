@@ -213,6 +213,9 @@ export const useSettingsStore = defineStore('settings', {
       } catch {
         // Quota exceeded or unavailable — silently ignore.
       }
+      // Notify other windows via BroadcastChannel for instant sync.
+      // The _broadcastSync function is injected by main.ts after store creation.
+      (this as unknown as { _broadcastSync?: () => void })._broadcastSync?.();
     },
   },
 });
