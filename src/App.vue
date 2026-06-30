@@ -38,6 +38,7 @@
     <UnsavedChangesDialog />
     <AboutDialog />
     <SettingsDialog />
+    <QuickOpenPalette />
   </ThemeProvider>
 </template>
 
@@ -57,6 +58,7 @@ import KeyboardShortcuts from './components/KeyboardShortcuts.vue';
 import UnsavedChangesDialog from './components/UnsavedChangesDialog.vue';
 import AboutDialog from './components/AboutDialog.vue';
 import SettingsDialog from './components/SettingsDialog.vue';
+import QuickOpenPalette from './components/QuickOpenPalette.vue';
 import {
   saveFile,
   updateWindowTitle,

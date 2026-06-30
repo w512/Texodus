@@ -110,6 +110,12 @@ export async function setupAppMenu(store: EditorStore): Promise<void> {
     }),
     openRecentSubmenu,
     await MenuItem.new({
+      id: 'file-quick-open',
+      text: 'Quick Open…',
+      accelerator: 'CmdOrCtrl+P',
+      action: () => { /* handled by keyboard shortcut */ },
+    }),
+    await MenuItem.new({
       id: 'file-close',
       text: inTabsMode && store.tabCount > 1 ? 'Close Tab' : 'Close',
       accelerator: 'CmdOrCtrl+W',
