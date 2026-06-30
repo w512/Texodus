@@ -9,6 +9,7 @@ import { refreshWorkspaceTreeIfPathInside } from './workspaceService';
 import { allowAssetDirectoryForFile } from './assetScopeService';
 import { basename } from '../utils/path';
 import { showToast } from '../utils/toast';
+import { markFileWritten, flushPendingSave } from '../composables/useAutoSave';
 
 export { showToast };
 
@@ -65,6 +66,7 @@ export async function saveFile(store: EditorStore): Promise<boolean> {
     if (!store.filePath) return await saveFileAs(store);
 
     await writeTextFile(store.filePath, store.content);
+    markFileWritten(store.filePath);
     store.setDirty(false);
     await updateWindowTitle(store);
     showToast('File saved');
@@ -86,6 +88,7 @@ export async function saveFileAs(store: EditorStore): Promise<boolean> {
     const path = selected as string;
     await writeTextFile(path, store.content);
     await allowAssetDirectoryForFile(path);
+    markFileWritten(path);
     store.setFilePath(path);
     store.setDirty(false);
     useSettingsStore().addRecentFile(path);
@@ -157,6 +160,10 @@ export async function requestOpenDocument(store: EditorStore): Promise<void> {
 
 export async function requestOpenFromPath(store: EditorStore, path: string): Promise<void> {
   const settings = useSettingsStore();
+
+  // Flush any pending auto-save before switching documents.
+  if (settings.autoSave) await flushPendingSave();
+
   if (settings.documentMode === 'tabs') {
     try {
       const content = await readTextFile(path);
@@ -192,6 +199,10 @@ export async function requestOpenFromPath(store: EditorStore, path: string): Pro
  */
 export async function requestCloseDocument(store: EditorStore): Promise<void> {
   const settings = useSettingsStore();
+
+  // Flush any pending auto-save before closing.
+  if (settings.autoSave) await flushPendingSave();
+
   if (settings.documentMode === 'tabs' && store.tabCount > 1) {
     if (!(await confirmCanProceed(store))) return;
     store.closeTab(store.activeTabId);

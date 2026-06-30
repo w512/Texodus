@@ -88,6 +88,26 @@
           </div>
 
           <div class="settings-row">
+            <label>Auto-save</label>
+            <div class="segmented" role="radiogroup" aria-label="Auto-save">
+              <button
+                type="button"
+                role="radio"
+                :aria-checked="!settingsStore.autoSave"
+                :class="{ active: !settingsStore.autoSave }"
+                @click="settingsStore.setAutoSave(false)"
+              >Off</button>
+              <button
+                type="button"
+                role="radio"
+                :aria-checked="settingsStore.autoSave"
+                :class="{ active: settingsStore.autoSave }"
+                @click="settingsStore.setAutoSave(true)"
+              >On</button>
+            </div>
+          </div>
+
+          <div class="settings-row">
             <label for="font-size">Font size</label>
             <SettingsStepper
               id="font-size"

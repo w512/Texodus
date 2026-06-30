@@ -62,6 +62,7 @@ import { useSettingsStore } from '../stores/settings';
 import { promptUnsavedChanges } from '../composables/useUnsavedPrompt';
 import { saveFile, updateWindowTitle } from '../services/fileService';
 import { basename } from '../utils/path';
+import { flushPendingSave } from '../composables/useAutoSave';
 
 const editorStore = useEditorStore();
 const settingsStore = useSettingsStore();
@@ -76,6 +77,10 @@ function labelFor(tab: Tab): string {
 
 async function onClose(id: string, event: Event) {
   event.stopPropagation();
+
+  // Flush any pending auto-save before checking dirty state.
+  if (settingsStore.autoSave) await flushPendingSave();
+
   const tab = editorStore.tabs.find((t) => t.id === id);
   if (!tab) return;
 
@@ -179,6 +184,8 @@ function handleTabClick(id: string) {
     suppressClick = false;
     return;
   }
+  // Flush pending auto-save for the outgoing tab before switching.
+  if (settingsStore.autoSave) void flushPendingSave();
   editorStore.setActiveTab(id);
 }
 

@@ -69,6 +69,7 @@ interface PersistedSettings {
   lastWorkspacePath: string | null;
   smoothScrollSync: boolean;
   searchHighlightColor: string;
+  autoSave: boolean;
 }
 
 interface SettingsState extends PersistedSettings {
@@ -95,6 +96,7 @@ const DEFAULTS: PersistedSettings = {
   lastWorkspacePath: null,
   smoothScrollSync: false,
   searchHighlightColor: '#ffd54a',
+  autoSave: false,
 };
 
 function loadPersisted(): PersistedSettings {
@@ -151,6 +153,7 @@ export const useSettingsStore = defineStore('settings', {
     setSidebarVisible(v: boolean) { this.sidebarVisible = v; },
     toggleSidebar() { this.sidebarVisible = !this.sidebarVisible; },
     setSmoothScrollSync(v: boolean) { this.smoothScrollSync = v; },
+    setAutoSave(v: boolean) { this.autoSave = v; },
     setSearchHighlightColor(v: string) {
       const hex = v.trim();
       if (/^[0-9a-fA-F]{6}$/.test(hex)) this.searchHighlightColor = hex;

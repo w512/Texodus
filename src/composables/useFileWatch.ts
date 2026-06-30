@@ -4,6 +4,7 @@ import { useEditorStore, type Tab } from '../stores/editor';
 import { basename, dirname } from '../utils/path';
 import { promptUnsavedChanges } from './useUnsavedPrompt';
 import { saveFile, showToast, updateWindowTitle } from '../services/fileService';
+import { wasRecentlyWritten } from './useAutoSave';
 
 type EditorStore = ReturnType<typeof useEditorStore>;
 
@@ -50,6 +51,10 @@ export function useFileWatch(store: EditorStore): void {
 
   async function reloadChangedPath(path: string, retried = false) {
     if (handlingPaths.has(path)) return;
+
+    // Suppress events triggered by our own writes (auto-save, manual save).
+    if (wasRecentlyWritten(path)) return;
+
     handlingPaths.add(path);
 
     try {

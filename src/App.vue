@@ -71,6 +71,7 @@ import { setupAppMenu } from './composables/useAppMenu';
 import { useMarkdownPreview } from './composables/useMarkdownPreview';
 import { promptUnsavedChanges } from './composables/useUnsavedPrompt';
 import { useFileWatch } from './composables/useFileWatch';
+import { useAutoSave, flushPendingSave } from './composables/useAutoSave';
 import { restoreSession, useSessionRestore } from './composables/useSessionRestore';
 import { refreshWorkspaceTree } from './services/workspaceService';
 import { useWorkspaceStore } from './stores/workspace';
@@ -85,6 +86,7 @@ const editorStore = useEditorStore();
 const workspaceStore = useWorkspaceStore();
 const { getEditorView } = useMarkdownPreview();
 useFileWatch(editorStore);
+useAutoSave(editorStore);
 useSessionRestore(editorStore);
 
 const handleFormat = (format: string) => applyFormat(format, getEditorView());
@@ -206,6 +208,9 @@ onMounted(async () => {
   try {
     const win = getCurrentWindow();
     unlistenClose = await win.onCloseRequested(async (event) => {
+      // Flush any pending auto-save before checking dirty state.
+      if (settingsStore.autoSave) await flushPendingSave();
+
       if (!editorStore.anyTabDirty) return;
       event.preventDefault();
 
