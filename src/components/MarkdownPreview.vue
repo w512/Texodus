@@ -20,8 +20,10 @@ import { renderMermaidBlocks } from '../services/mermaidRenderer';
 import { type Token } from 'marked';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { dirname, hasUrlScheme, isAbsolutePath, resolveLocalPath } from '../utils/path';
-import { isAllowedExternalHref } from '../utils/link';
+import { resolveLinkTarget } from '../utils/link';
 import { collectMarkdownTaskCheckboxes } from '../utils/markdownTasks';
+import { requestOpenFromPath } from '../services/fileService';
+import { showToast } from '../utils/toast';
 
 const editorStore = useEditorStore();
 const settingsStore = useSettingsStore();
@@ -187,21 +189,43 @@ const handleLinkClick = async (e: MouseEvent) => {
     return;
   }
 
-  // 2. Handle external link clicks (§3.2)
+  // 2. Handle link clicks
   const anchor = target.closest('a[href]');
   if (!anchor) return;
   const href = anchor.getAttribute('href');
   if (!href || href.startsWith('#')) return; // allow in-page anchors
 
   e.preventDefault();
-  if (!isAllowedExternalHref(href)) return;
+
+  const baseDir = editorStore.filePath ? dirname(editorStore.filePath) : '';
+  const link = resolveLinkTarget(href, baseDir);
+  switch (link.kind) {
+    case 'external':
+      await openInOs(link.url); // http/https/mailto → OS browser (§3.2)
+      break;
+    case 'os-file':
+      await openInOs(link.path); // non-markdown local file → OS default app
+      break;
+    case 'document':
+      await requestOpenFromPath(editorStore, link.path); // markdown → open in-app
+      break;
+    case 'needs-base':
+      showToast('Save this document to open linked files');
+      break;
+    case 'ignore':
+      break;
+  }
+};
+
+// Opens a URL or local file path with the OS default handler.
+async function openInOs(pathOrUrl: string): Promise<void> {
   try {
     const { open } = await import('@tauri-apps/plugin-shell');
-    await open(href);
+    await open(pathOrUrl);
   } catch {
     // fallback: do nothing
   }
-};
+}
 
 const SCROLL_HIDE_DELAY = 1200;
 let scrollHideTimer: ReturnType<typeof setTimeout> | null = null;
