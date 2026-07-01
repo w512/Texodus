@@ -213,4 +213,53 @@ describe('useDocumentSearch', () => {
       expect(s.currentIndex.value).toBe(0);
     });
   });
+
+  describe('preview target — mermaid toolbar exclusion', () => {
+    function setPreview(html: string): HTMLElement {
+      const el = document.createElement('div');
+      el.innerHTML = html;
+      document.body.appendChild(el);
+      previews.push(el);
+      mockGetPreviewElement.mockReturnValue(el);
+      return el;
+    }
+
+    let previews: HTMLElement[] = [];
+
+    beforeEach(() => {
+      // jsdom's Range lacks getBoundingClientRect (used for scroll-to-match,
+      // which runs after the count is computed). Stub it so the preview path
+      // doesn't throw; the real WebView implements it.
+      Range.prototype.getBoundingClientRect = () =>
+        ({ top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0, toJSON() {} }) as DOMRect;
+    });
+
+    afterEach(() => {
+      for (const el of previews) el.remove();
+      previews = [];
+    });
+
+    it('does not count text inside a mermaid toolbar', () => {
+      // "Reset" appears in the toolbar and in the body; only the body match counts.
+      setPreview(
+        '<div class="mermaid-preview-container">' +
+          '<div class="mermaid-toolbar"><button>Reset</button><span>100%</span></div>' +
+          '<svg><text>Reset</text></svg>' +
+          '</div>' +
+          '<p>Reset the counter here.</p>',
+      );
+      const s = getSearch();
+      s.open();
+      s.setQuery('Reset');
+      expect(s.matchCount.value).toBe(1);
+    });
+
+    it('counts ordinary preview content normally', () => {
+      setPreview('<p>foo bar foo</p><p>foo</p>');
+      const s = getSearch();
+      s.open();
+      s.setQuery('foo');
+      expect(s.matchCount.value).toBe(3);
+    });
+  });
 });

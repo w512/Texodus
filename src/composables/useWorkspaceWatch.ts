@@ -69,8 +69,8 @@ export function useWorkspaceWatch(): void {
 }
 
 /** True for events that can alter the tree shape (create/remove/rename), false
- *  for pure read-access and content/metadata modifications. */
-function changesTree(event: WatchEvent): boolean {
+ *  for pure read-access and content/metadata modifications. Exported for tests. */
+export function changesTree(event: WatchEvent): boolean {
   const type = event.type;
   if (typeof type === 'string') return true; // 'any' | 'other' — refresh defensively
   if ('access' in type) return false;

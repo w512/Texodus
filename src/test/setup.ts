@@ -16,6 +16,7 @@ import {
 
 vi.mock('@tauri-apps/plugin-fs', () => ({
   readTextFile: vi.fn((path: string) => mockFs.readTextFile(path)),
+  readFile: vi.fn((path: string) => mockFs.readFile(path)),
   writeTextFile: vi.fn((path: string, content: string) => mockFs.writeTextFile(path, content)),
   readDir: vi.fn((dir: string) => mockFs.readDir(dir)),
   stat: vi.fn((path: string) => mockFs.stat(path)),

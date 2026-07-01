@@ -97,6 +97,14 @@ async function mockReadTextFile(path: string): Promise<string> {
   return node.content ?? '';
 }
 
+async function mockReadFile(path: string): Promise<Uint8Array> {
+  const p = normalizePath(path);
+  const node = fs.get(p);
+  if (!node) throw new Error(`File not found: ${path}`);
+  if (node.isDir) throw new Error(`Is a directory: ${path}`);
+  return new TextEncoder().encode(node.content ?? '');
+}
+
 async function mockWriteTextFile(path: string, content: string): Promise<void> {
   const p = normalizePath(path);
   const name = p.split('/').pop() || p;
@@ -195,6 +203,7 @@ async function mockInvoke<T>(command: string, args?: Record<string, unknown>): P
 
 export const mockFs = {
   readTextFile: mockReadTextFile,
+  readFile: mockReadFile,
   writeTextFile: mockWriteTextFile,
   readDir: mockReadDir,
   stat: mockStat,
