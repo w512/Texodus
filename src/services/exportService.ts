@@ -1,9 +1,10 @@
 import { save, message } from "@tauri-apps/plugin-dialog";
-import { writeTextFile, writeFile } from "@tauri-apps/plugin-fs";
+import { writeTextFile, writeFile, readFile } from "@tauri-apps/plugin-fs";
 import { type Token, type Tokens } from "marked";
 import type { Content, TDocumentDefinitions } from "pdfmake/interfaces";
 import { lexMarkdown, renderMarkdownToHtml, sanitizeMarkdownHtml } from "./markdownSanitizer";
 import { renderMermaidBlocks, renderMermaidSvg } from "./mermaidRenderer";
+import { dirname, hasUrlScheme, isAbsolutePath, resolveLocalPath } from "../utils/path";
 import { showToast } from "../utils/toast";
 
 type PdfMakeModule = {
@@ -97,12 +98,65 @@ const EXPORT_CSS = `
   }
 `;
 
+// Extensions we can embed as data: URIs, mapped to their MIME type.
+const IMAGE_MIME_TYPES: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  svg: "image/svg+xml",
+  webp: "image/webp",
+  bmp: "image/bmp",
+  avif: "image/avif",
+  ico: "image/x-icon",
+};
+
+/** Base64-encodes bytes in chunks to avoid blowing the call stack on large images. */
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+/**
+ * Rewrites `<img>` elements with local paths to self-contained `data:` URIs so
+ * the exported HTML renders anywhere, not just next to the source file. Mirrors
+ * live preview's `rewriteLocalImages`, but embeds bytes instead of using the
+ * asset protocol (which only resolves inside the app). Remote/`data:` sources
+ * and unreadable/unknown files are left untouched.
+ */
+async function inlineLocalImages(container: HTMLElement, filePath: string | null): Promise<void> {
+  const baseDir = filePath ? dirname(filePath) : "";
+  const images = Array.from(container.querySelectorAll("img"));
+  await Promise.all(
+    images.map(async (img) => {
+      const src = img.getAttribute("src");
+      if (!src || hasUrlScheme(src)) return;
+      if (!isAbsolutePath(src) && !baseDir) return;
+      const abs = resolveLocalPath(baseDir, src);
+      const ext = abs.split(".").pop()?.toLowerCase() ?? "";
+      const mime = IMAGE_MIME_TYPES[ext];
+      if (!mime) return;
+      try {
+        const bytes = await readFile(abs);
+        img.setAttribute("src", `data:${mime};base64,${bytesToBase64(bytes)}`);
+      } catch (e) {
+        console.warn(`Failed to inline image for HTML export: ${abs}`, e);
+      }
+    }),
+  );
+}
+
 /**
  * Renders the current markdown to a self-contained HTML document with
- * embedded styling. Mermaid diagrams are pre-rendered to inline SVG so the
- * exported file works offline and doesn't violate the app's strict CSP.
+ * embedded styling. Mermaid diagrams are pre-rendered to inline SVG and local
+ * images are embedded as data: URIs so the exported file works offline and
+ * doesn't violate the app's strict CSP.
  */
-export async function renderExportHtml(markdown: string, title: string): Promise<string> {
+export async function renderExportHtml(markdown: string, title: string, filePath: string | null = null): Promise<string> {
   const bodyHtml = sanitizeMarkdownHtml(renderMarkdownToHtml(markdown));
 
   // Inline mermaid as SVG via a detached container so the export file has
@@ -111,6 +165,7 @@ export async function renderExportHtml(markdown: string, title: string): Promise
   const tempContainer = document.createElement("div");
   tempContainer.innerHTML = bodyHtml;
   await renderMermaidBlocks(tempContainer, { theme: "default" });
+  await inlineLocalImages(tempContainer, filePath);
   const finalBody = tempContainer.innerHTML;
 
   return `<!DOCTYPE html>
@@ -155,7 +210,7 @@ export function getExportTitle(filePath: string | null): string {
 export async function exportHtml(markdown: string, filePath: string | null): Promise<boolean> {
   try {
     const title = getExportTitle(filePath);
-    const html = await renderExportHtml(markdown, title);
+    const html = await renderExportHtml(markdown, title, filePath);
 
     const savePath = await save({
       filters: [{ name: "HTML Document", extensions: ["html", "htm"] }],

@@ -7,8 +7,14 @@ import { promptUnsavedChanges } from '../composables/useUnsavedPrompt';
 import { dirname, isSameOrInside, normalizePath, resolveLocalPath } from '../utils/path';
 import { expandAndLoadParentDirectories, refreshWorkspaceTree } from './workspaceService';
 import { updateWindowTitle } from './fileService';
+import { showToast } from '../utils/toast';
 
-async function ensurePathDoesNotExist(path: string): Promise<boolean> {
+async function ensurePathDoesNotExist(path: string, ignorePath?: string): Promise<boolean> {
+  // A case-only rename on a case-insensitive filesystem (macOS/Windows) resolves
+  // to the very node being renamed, so `stat` finding it there is not a conflict.
+  if (ignorePath && normalizePath(path).toLowerCase() === normalizePath(ignorePath).toLowerCase()) {
+    return true;
+  }
   try {
     await stat(path);
     await message(`A file or folder already exists at:\n${path}`, { title: 'Already exists', kind: 'warning' });
@@ -141,7 +147,7 @@ export async function renameWorkspaceNode(node: FileTreeNode, nextName: string):
   if (!nextName || nextName === node.name) return;
 
   const nextPath = resolveLocalPath(dirname(node.path), nextName);
-  if (!(await ensurePathDoesNotExist(nextPath))) return;
+  if (!(await ensurePathDoesNotExist(nextPath, node.path))) return;
 
   try {
     await rename(node.path, nextPath);
@@ -193,8 +199,16 @@ export async function deleteWorkspaceNode(node: FileTreeNode): Promise<void> {
   try {
     await remove(node.path, { recursive: node.kind === 'directory' });
     removeExpandedPathPrefix(node.path);
-    if (editorStore.filePath && isSameOrInside(editorStore.filePath, node.path)) {
-      editorStore.reset();
+    // Reset every tab whose file lived inside the deleted path — not just the
+    // active one — so their file-watchers don't keep failing to re-read a gone
+    // file. Mirrors rename/move, which update all affected tabs.
+    const affectedTabs = editorStore.tabs.filter(
+      (tab) => tab.filePath && isSameOrInside(tab.filePath, node.path),
+    );
+    for (const tab of affectedTabs) {
+      editorStore.loadTabFile(tab.id, '', null);
+    }
+    if (affectedTabs.some((tab) => tab.id === editorStore.activeTabId)) {
       await updateWindowTitle(editorStore);
     }
     const parent = dirname(node.path);
@@ -220,5 +234,10 @@ export async function copyWorkspaceRelativePath(node: FileTreeNode): Promise<voi
     ? full.slice(normalizedRoot.length + 1)
     : node.path;
 
-  await navigator.clipboard.writeText(relative);
+  try {
+    await navigator.clipboard.writeText(relative);
+    showToast('Path copied');
+  } catch (e) {
+    await message(`Failed to copy path: ${e instanceof Error ? e.message : String(e)}`, { title: 'Error', kind: 'error' });
+  }
 }

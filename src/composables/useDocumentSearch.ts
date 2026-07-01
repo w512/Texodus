@@ -134,7 +134,16 @@ function applyEditor(view: EditorView, reselect: boolean): void {
 // ── Preview target (CSS Custom Highlight API) ───────────────────────────────
 
 function collectPreviewRanges(root: HTMLElement, re: RegExp): Range[] {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  // Skip text that isn't document content: mermaid diagram toolbars ("Copy
+  // SVG", "Reset", the zoom "100%" label) and text rendered inside the SVGs
+  // themselves. Otherwise these leak into the N/M counter and navigation.
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = (node as Text).parentElement;
+      if (parent?.closest('.mermaid-toolbar, svg')) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
   const ranges: Range[] = [];
 
   // Run the regex per text node instead of concatenating all text into a
