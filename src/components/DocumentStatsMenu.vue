@@ -9,15 +9,15 @@
       
       <div class="stat-item">
         <span class="stat-label">Words</span>
-        <span class="stat-value">{{ wordCount }}</span>
+        <span class="stat-value">{{ stats.words }}</span>
       </div>
       <div class="stat-item">
         <span class="stat-label">Characters (no spaces)</span>
-        <span class="stat-value">{{ charCountNoSpaces }}</span>
+        <span class="stat-value">{{ stats.charsNoSpaces }}</span>
       </div>
       <div class="stat-item">
         <span class="stat-label">Characters (with spaces)</span>
-        <span class="stat-value">{{ charCount }}</span>
+        <span class="stat-value">{{ stats.chars }}</span>
       </div>
       
       <div class="menu-divider"></div>
@@ -31,8 +31,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useEditorStore } from '../stores/editor';
+import { computeDocumentStats, type DocumentStats } from '../services/documentStats';
 import iconInfo from '../assets/icons/icons8-info-100.png';
 
 const isOpen = ref(false);
@@ -55,27 +56,44 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('click', closeMenu);
+  if (statsTimer) clearTimeout(statsTimer);
 });
 
-// Statistics Computation
-const content = computed(() => editorStore.content || '');
+// ── Statistics ────────────────────────────────────────────────────────────
+// Counted on the document's plain text (markdown syntax, URLs, code blocks
+// and frontmatter excluded — see services/documentStats). Lexing the whole
+// document on every keystroke would be wasted work while the dropdown is
+// closed, so stats compute on open and re-compute debounced while it stays
+// open during edits.
 
-const wordCount = computed(() => {
-  const text = content.value.trim();
-  if (!text) return 0;
-  // A simple word count split by whitespace
-  return text.split(/\s+/).filter(word => word.length > 0).length;
+const STATS_DEBOUNCE_MS = 300;
+const stats = ref<DocumentStats>({ words: 0, chars: 0, charsNoSpaces: 0 });
+let statsTimer: ReturnType<typeof setTimeout> | null = null;
+
+watch(isOpen, (open) => {
+  if (!open) return;
+  if (statsTimer) {
+    clearTimeout(statsTimer);
+    statsTimer = null;
+  }
+  stats.value = computeDocumentStats(editorStore.content);
 });
 
-const charCount = computed(() => content.value.length);
-
-const charCountNoSpaces = computed(() => {
-  return content.value.replace(/\s/g, '').length;
-});
+watch(
+  () => editorStore.content,
+  () => {
+    if (!isOpen.value) return;
+    if (statsTimer) clearTimeout(statsTimer);
+    statsTimer = setTimeout(() => {
+      statsTimer = null;
+      stats.value = computeDocumentStats(editorStore.content);
+    }, STATS_DEBOUNCE_MS);
+  },
+);
 
 const readingTime = computed(() => {
   // Average reading speed is ~200 words per minute.
-  const minutes = Math.ceil(wordCount.value / 200);
+  const minutes = Math.ceil(stats.value.words / 200);
   return minutes > 0 ? minutes : 1;
 });
 </script>

@@ -55,4 +55,14 @@ describe('renderMarkdownToSafeHtml', () => {
     expect(out).not.toContain('<script');
     expect(out).not.toContain('onerror');
   });
+
+  it('marks GFM task checkboxes with data-task; raw inputs stay unmarked', async () => {
+    const out = await renderMarkdownToSafeHtml(
+      '- [x] done\n- [ ] todo\n\n<input type="checkbox">',
+    );
+    expect(out.match(/data-task/g)).toHaveLength(2);
+    expect(out).toContain('checked');
+    // The raw-HTML input survives sanitization but without the marker.
+    expect(out.match(/<input/g)).toHaveLength(3);
+  });
 });

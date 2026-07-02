@@ -21,6 +21,7 @@ import { ensurePrismLanguages, highlightUnder } from '../services/prismHighlight
 import { type Token } from 'marked';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { dirname, hasUrlScheme, isAbsolutePath, resolveLocalPath } from '../utils/path';
+import { patchChildren, serializeNode } from '../utils/domPatch';
 import { resolveLinkTarget } from '../utils/link';
 import { collectMarkdownTaskCheckboxes } from '../utils/markdownTasks';
 import { requestOpenFromPath } from '../services/fileService';
@@ -45,6 +46,12 @@ const DEBOUNCE_MS = 120;
 // sentinel and fresh output would otherwise both be '' and miss the swap.
 let lastRenderedHtml = '';
 let forceRerender = true;
+
+// Per-node serialization of the previous render, aligned 1:1 with the
+// preview's top-level childNodes — the diff input for patchChildren, so an
+// edit only rebuilds the blocks that actually changed (and unchanged mermaid
+// diagrams survive with their zoom/pan state). See utils/domPatch.ts.
+let lastSerialized: string[] = [];
 
 // Generation counter guarding the async render pipeline. The debounce only
 // spaces out *starts*: a run parked at an await (mermaid can take hundreds of
@@ -106,8 +113,19 @@ const renderMarkdown = async () => {
   const htmlChanged = forceRerender || clean !== lastRenderedHtml;
   if (htmlChanged) {
     lastRenderedHtml = clean;
+    const template = document.createElement('template');
+    template.innerHTML = clean;
+    const newNodes = Array.from(template.content.childNodes);
+    const newSerialized = newNodes.map(serializeNode);
+    if (forceRerender) {
+      // Tab/theme switches rebuild everything — mermaid must re-render with
+      // the new theme, and cross-document block reuse isn't meaningful.
+      previewRef.value.replaceChildren(...newNodes);
+    } else {
+      patchChildren(previewRef.value, newNodes, newSerialized, lastSerialized);
+    }
+    lastSerialized = newSerialized;
     forceRerender = false;
-    previewRef.value.innerHTML = clean;
     rewriteLocalImages(previewRef.value, editorStore.filePath);
   }
 
@@ -189,11 +207,15 @@ const handleLinkClick = async (e: MouseEvent) => {
   const target = e.target as HTMLElement | null;
   if (!target || !previewRef.value) return;
 
-  // 1. Handle task list checkbox click
+  // 1. Handle task list checkbox click. Only GFM task checkboxes (tagged
+  // data-task by the marked renderer) map back to a source `[ ]` marker —
+  // indexing over every input would let a raw-HTML checkbox in the document
+  // shift the mapping and toggle the wrong item. Raw inputs are inert.
   if (target instanceof HTMLInputElement && target.type === 'checkbox') {
     e.preventDefault(); // Prevent visual toggle desync
+    if (!target.hasAttribute('data-task')) return;
     const checkboxes = Array.from(
-      previewRef.value.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+      previewRef.value.querySelectorAll<HTMLInputElement>('input[type="checkbox"][data-task]'),
     );
     const index = checkboxes.indexOf(target);
     if (index !== -1) {

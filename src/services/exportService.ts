@@ -210,14 +210,16 @@ export function getExportTitle(filePath: string | null): string {
 export async function exportHtml(markdown: string, filePath: string | null): Promise<boolean> {
   try {
     const title = getExportTitle(filePath);
-    const html = await renderExportHtml(markdown, title, filePath);
 
+    // Dialog first (like exportPdf): rendering — mermaid → SVG, images →
+    // base64 — is the expensive part and is wasted work on cancel.
     const savePath = await save({
       filters: [{ name: "HTML Document", extensions: ["html", "htm"] }],
       defaultPath: `${title}.html`,
     });
     if (!savePath) return false;
 
+    const html = await renderExportHtml(markdown, title, filePath);
     await writeTextFile(savePath as string, html);
     showToast('Exported as HTML');
     return true;
