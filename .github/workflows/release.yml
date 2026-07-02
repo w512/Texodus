@@ -103,10 +103,12 @@ jobs:
             -name 'libGLdispatch.so*' \
           \) -print -delete
 
-          # Reference appimagetool, pinned to AppImageKit 13.
-          # --appimage-extract-and-run avoids needing FUSE on the runner.
+          # Reference appimagetool, pinned (the old AppImageKit release
+          # assets are gone — 404 — so this comes from the maintained
+          # AppImage/appimagetool repo). --appimage-extract-and-run avoids
+          # needing FUSE on the runner.
           curl -fsSL -o appimagetool \
-            https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage
+            https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
           chmod +x appimagetool
           ARCH=x86_64 ./appimagetool --appimage-extract-and-run squashfs-root "$appimage"
 
