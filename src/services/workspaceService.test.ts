@@ -1,12 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
-// Mock assetScopeService (non-Tauri dep)
-vi.mock('./assetScopeService', () => ({
-  allowAssetDirectory: vi.fn().mockResolvedValue(undefined),
-  allowAssetDirectoryForFile: vi.fn().mockResolvedValue(undefined),
-}));
-
 // Mock settings store to avoid localStorage persistence
 vi.mock('../stores/settings', () => ({
   useSettingsStore: () => ({

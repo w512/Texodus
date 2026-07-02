@@ -1,8 +1,10 @@
 use std::collections::{BTreeSet, HashMap};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_fs::FsExt;
 
 #[derive(Clone)]
 pub struct WindowStatus {
@@ -50,6 +52,26 @@ fn next_window_label() -> String {
 fn is_supported_path(path: &str) -> bool {
     let lower = path.to_lowercase();
     lower.ends_with(".md") || lower.ends_with(".markdown") || lower.ends_with(".txt")
+}
+
+/// Grants runtime fs + asset-protocol scope for `path` and its parent
+/// directory (recursively — relative images and sibling links live next to
+/// documents, and the file watcher watches the parent directory).
+///
+/// Only call from trusted, user-initiated origins: native dialog picks, OS
+/// "Open With"/argv routing, and drag-drop. Never expose this as a
+/// webview-invokable command — a compromised webview could mint grants for
+/// arbitrary paths and the whole scope model would collapse.
+fn grant_path_scope(app: &AppHandle, path: &Path) {
+    if let Some(scope) = app.try_fs_scope() {
+        let _ = scope.allow_file(path);
+        if let Some(parent) = path.parent() {
+            let _ = scope.allow_directory(parent, true);
+        }
+    }
+    if let Some(parent) = path.parent() {
+        let _ = app.asset_protocol_scope().allow_directory(parent, true);
+    }
 }
 
 /// Collects every arg that looks like a supported file path (multi-select
@@ -195,6 +217,11 @@ fn is_path_already_pending(path: &str, pending: &HashMap<String, Vec<String>>) -
 }
 
 fn handle_incoming_file(app: &AppHandle, path: String) {
+    // OS-originated path ("Open With", argv, second launch) — a trusted,
+    // user-initiated origin like a dialog pick. Grant scope before any
+    // window's frontend tries to read the file.
+    grant_path_scope(app, Path::new(&path));
+
     let state = app.state::<AppState>();
 
     // Idempotency: this exact path is already queued for some window (most
@@ -293,11 +320,52 @@ fn report_window_status(
     }
 }
 
+const DIALOG_FILTER_NAME: &str = "Markdown";
+const OPEN_EXTENSIONS: &[&str] = &["md", "markdown", "txt"];
+const SAVE_EXTENSIONS: &[&str] = &["md", "markdown"];
+
+/// Native "Open…" dialog run on the Rust side. Unlike the JS dialog plugin
+/// (which only auto-grants the picked file itself), the pick also grants
+/// scope for the file's directory via `grant_path_scope` — relative images,
+/// sibling links and directory watching all need it. Async so the blocking
+/// dialog call runs off the main thread.
 #[tauri::command]
-fn allow_asset_directory(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    app.asset_protocol_scope()
-        .allow_directory(PathBuf::from(path), true)
-        .map_err(|e| e.to_string())
+async fn pick_document(app: AppHandle) -> Option<String> {
+    let picked = app
+        .dialog()
+        .file()
+        .add_filter(DIALOG_FILTER_NAME, OPEN_EXTENSIONS)
+        .blocking_pick_file()?;
+    let path = picked.into_path().ok()?;
+    grant_path_scope(&app, &path);
+    Some(path.to_string_lossy().into_owned())
+}
+
+/// Native "Save As…" dialog on the Rust side; grants scope for the picked
+/// path and its directory (see `pick_document`).
+#[tauri::command]
+async fn pick_save_path(app: AppHandle, default_path: Option<String>) -> Option<String> {
+    let mut dialog = app
+        .dialog()
+        .file()
+        .add_filter(DIALOG_FILTER_NAME, SAVE_EXTENSIONS);
+    if let Some(default) = default_path {
+        let default = PathBuf::from(default);
+        match (default.parent(), default.file_name()) {
+            (Some(dir), Some(name)) if !dir.as_os_str().is_empty() => {
+                dialog = dialog
+                    .set_directory(dir)
+                    .set_file_name(name.to_string_lossy());
+            }
+            _ => {
+                dialog = dialog.set_file_name(default.to_string_lossy());
+            }
+        }
+    }
+    let picked = dialog.blocking_save_file()?;
+    let path = picked.into_path().ok()?;
+    grant_path_scope(&app, &path);
+    Some(path.to_string_lossy().into_owned())
 }
 
 /// Cached system font list. `fontdb::Database::load_system_fonts()` is
@@ -378,7 +446,20 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         // Persists window size/position/maximized state across restarts.
         // Saves on exit, restores automatically when the window is created.
-        .plugin(tauri_plugin_window_state::Builder::default().build());
+        .plugin(tauri_plugin_window_state::Builder::default().build())
+        // Files dragged into a window are a trusted user gesture — grant
+        // scope up front, before the webview's own drag-drop event fires and
+        // its handler tries to read/copy the dropped files.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                for path in paths {
+                    let supported = path.to_str().map(is_supported_path).unwrap_or(false);
+                    if supported {
+                        grant_path_scope(window.app_handle(), path);
+                    }
+                }
+            }
+        });
 
     // Single-instance: when a user double-clicks a .md while Texodus is already
     // running, Windows/Linux spawn a second process; this plugin forwards its
@@ -405,9 +486,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             take_pending_files,
             report_window_status,
-            allow_asset_directory,
             list_system_fonts,
-            open_new_window
+            open_new_window,
+            pick_document,
+            pick_save_path
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

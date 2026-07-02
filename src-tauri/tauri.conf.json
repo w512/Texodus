@@ -28,7 +28,19 @@
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https: asset: http://asset.localhost; connect-src ipc: http://ipc.localhost",
       "assetProtocol": {
         "enable": true,
-        "scope": []
+        "scope": {
+          "allow": [],
+          "deny": [
+            "$HOME/.ssh",
+            "$HOME/.ssh/**",
+            "$HOME/.aws",
+            "$HOME/.aws/**",
+            "$HOME/.gnupg",
+            "$HOME/.gnupg/**",
+            "$HOME/Library/Keychains",
+            "$HOME/Library/Keychains/**"
+          ]
+        }
       }
     }
   },

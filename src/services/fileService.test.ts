@@ -1,19 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
+import { setMockInvoke } from '../mock-tauri';
 
-// Mock workspaceService and assetScopeService (non-Tauri deps)
+// Mock workspaceService (non-Tauri dep)
 vi.mock('./workspaceService', () => ({
   refreshWorkspaceTreeIfPathInside: vi.fn().mockResolvedValue(undefined),
-}));
-vi.mock('./assetScopeService', () => ({
-  allowAssetDirectoryForFile: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../composables/useUnsavedPrompt', () => ({
   promptUnsavedChanges: vi.fn().mockResolvedValue('discard'),
 }));
 
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
-import { open, save, message } from '@tauri-apps/plugin-dialog';
+import { message } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import {
   saveFile,
@@ -29,12 +27,14 @@ import { useSettingsStore } from '../stores/settings';
 
 const mockedReadTextFile = vi.mocked(readTextFile);
 const mockedWriteTextFile = vi.mocked(writeTextFile);
-const mockedOpen = vi.mocked(open);
-const mockedSave = vi.mocked(save);
 
 beforeEach(() => {
   setActivePinia(createPinia());
 });
+
+// Open/Save dialogs are Rust commands (`pick_document` / `pick_save_path`)
+// so the pick can grant fs/asset scope; tests stub them via setMockInvoke.
+// The default mock invoke resolves `undefined` for unset commands = cancel.
 
 describe('saveFile', () => {
   it('writes content to the existing file path and clears dirty', async () => {
@@ -52,10 +52,10 @@ describe('saveFile', () => {
     const store = useEditorStore();
     store.updateContent('new content');
 
-    mockedSave.mockResolvedValue('/tmp/saved.md');
+    setMockInvoke('pick_save_path', () => '/tmp/saved.md');
     const result = await saveFile(store);
     expect(result).toBe(true);
-    expect(mockedSave).toHaveBeenCalled();
+    expect(invoke).toHaveBeenCalledWith('pick_save_path', expect.anything());
     expect(mockedWriteTextFile).toHaveBeenCalledWith('/tmp/saved.md', 'new content');
     expect(store.filePath).toBe('/tmp/saved.md');
   });
@@ -64,7 +64,7 @@ describe('saveFile', () => {
     const store = useEditorStore();
     store.updateContent('content');
 
-    mockedSave.mockResolvedValue(null);
+    setMockInvoke('pick_save_path', () => null);
     const result = await saveFile(store);
     expect(result).toBe(false);
     expect(mockedWriteTextFile).not.toHaveBeenCalled();
@@ -76,7 +76,7 @@ describe('saveFileAs', () => {
     const store = useEditorStore();
     store.updateContent('hello');
 
-    mockedSave.mockResolvedValue('/tmp/new.md');
+    setMockInvoke('pick_save_path', () => '/tmp/new.md');
     const result = await saveFileAs(store);
     expect(result).toBe(true);
     expect(mockedWriteTextFile).toHaveBeenCalledWith('/tmp/new.md', 'hello');
@@ -86,7 +86,7 @@ describe('saveFileAs', () => {
 
   it('returns false when user cancels', async () => {
     const store = useEditorStore();
-    mockedSave.mockResolvedValue(null);
+    setMockInvoke('pick_save_path', () => null);
     const result = await saveFileAs(store);
     expect(result).toBe(false);
   });
@@ -94,7 +94,7 @@ describe('saveFileAs', () => {
   it('shows error dialog on write failure', async () => {
     const store = useEditorStore();
     store.updateContent('data');
-    mockedSave.mockResolvedValue('/tmp/fail.md');
+    setMockInvoke('pick_save_path', () => '/tmp/fail.md');
     mockedWriteTextFile.mockRejectedValue(new Error('Disk full'));
     const result = await saveFileAs(store);
     expect(result).toBe(false);
@@ -184,18 +184,25 @@ describe('requestOpenFromPath (tabs mode)', () => {
 describe('requestOpenDocument (windows mode)', () => {
   it('opens file directly when current document is empty', async () => {
     const store = useEditorStore();
-    mockedOpen.mockResolvedValue('/tmp/open.md');
+    setMockInvoke('pick_document', () => '/tmp/open.md');
     mockedReadTextFile.mockResolvedValue('file content');
     await requestOpenDocument(store);
     expect(store.content).toBe('file content');
     expect(store.filePath).toBe('/tmp/open.md');
   });
 
+  it('does nothing when the dialog is cancelled', async () => {
+    const store = useEditorStore();
+    setMockInvoke('pick_document', () => null);
+    await requestOpenDocument(store);
+    expect(mockedReadTextFile).not.toHaveBeenCalled();
+  });
+
   it('opens new window with path when current document is dirty', async () => {
     const store = useEditorStore();
     store.loadFile('existing', '/tmp/existing.md');
     store.updateContent('modified');
-    mockedOpen.mockResolvedValue('/tmp/other.md');
+    setMockInvoke('pick_document', () => '/tmp/other.md');
     await requestOpenDocument(store);
     expect(invoke).toHaveBeenCalledWith('open_new_window', { path: '/tmp/other.md' });
   });
@@ -204,8 +211,10 @@ describe('requestOpenDocument (windows mode)', () => {
     const store = useEditorStore();
     store.loadFile('existing', '/tmp/existing.md');
     store.updateContent('modified');
-    mockedOpen.mockResolvedValue('/tmp/other.md');
-    vi.mocked(invoke).mockRejectedValueOnce(new Error('Failed'));
+    setMockInvoke('pick_document', () => '/tmp/other.md');
+    setMockInvoke('open_new_window', () => {
+      throw new Error('Failed');
+    });
     await requestOpenDocument(store);
     expect(message).toHaveBeenCalled();
   });

@@ -1,12 +1,11 @@
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
-import { open, save, message } from '@tauri-apps/plugin-dialog';
+import { message } from '@tauri-apps/plugin-dialog';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { invoke } from '@tauri-apps/api/core';
 import { useEditorStore } from '../stores/editor';
 import { useSettingsStore } from '../stores/settings';
 import { promptUnsavedChanges } from '../composables/useUnsavedPrompt';
 import { refreshWorkspaceTreeIfPathInside } from './workspaceService';
-import { allowAssetDirectoryForFile } from './assetScopeService';
 import { basename, normalizePath } from '../utils/path';
 import { showToast } from '../utils/toast';
 import { markFileWritten } from '../utils/writeSuppression';
@@ -14,7 +13,10 @@ import { flushPendingSave } from '../composables/useAutoSave';
 
 export { showToast };
 
-const FILE_FILTERS =[{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }];
+// Open/Save dialogs go through the Rust `pick_document` / `pick_save_path`
+// commands, not the JS dialog plugin: the Rust side grants fs/asset scope for
+// the picked file's *directory* (relative images, sibling links, dir watch),
+// which the JS plugin's automatic file-level grant doesn't cover.
 
 type EditorStore = ReturnType<typeof useEditorStore>;
 
@@ -31,16 +33,34 @@ async function confirmCanProceed(store: EditorStore): Promise<boolean> {
   return true; // discard
 }
 
+/** True when the fs plugin rejected the path as outside the granted scope
+ *  (see the FS scope model in CLAUDE.md) rather than a real I/O failure. */
+function isScopeDenied(err: unknown): boolean {
+  return String(err instanceof Error ? err.message : err).includes('not allowed');
+}
+
+/** Open failures where the path didn't come from a fresh dialog pick (recent
+ *  files, preview links, session leftovers) may be scope denials — explain
+ *  how to grant access instead of showing a cryptic plugin error. */
+async function showOpenError(path: string, err: unknown): Promise<void> {
+  if (isScopeDenied(err)) {
+    await message(
+      `Texodus doesn't have access to:\n${path}\n\nOpen it via File → Open, or open its folder as a workspace, to grant access.`,
+      { title: 'No access to file', kind: 'warning' },
+    );
+    return;
+  }
+  await showError('Failed to open file', err);
+}
+
 export async function openFile(store: EditorStore): Promise<void> {
   try {
     if (!(await confirmCanProceed(store))) return;
 
-    const selected = await open({ multiple: false, filters: FILE_FILTERS });
-    if (!selected) return;
+    const path = await invoke<string | null>('pick_document');
+    if (!path) return;
 
-    const path = selected as string;
     const content = await readTextFile(path);
-    await allowAssetDirectoryForFile(path);
     store.loadFile(content, path);
     useSettingsStore().addRecentFile(path);
     await updateWindowTitle(store);
@@ -53,12 +73,11 @@ export async function loadFileFromPath(store: EditorStore, path: string): Promis
   try {
     if (!(await confirmCanProceed(store))) return;
     const content = await readTextFile(path);
-    await allowAssetDirectoryForFile(path);
     store.loadFile(content, path);
     useSettingsStore().addRecentFile(path);
     await updateWindowTitle(store);
   } catch (e) {
-    await showError('Failed to open file', e);
+    await showOpenError(path, e);
   }
 }
 
@@ -80,15 +99,12 @@ export async function saveFile(store: EditorStore): Promise<boolean> {
 
 export async function saveFileAs(store: EditorStore): Promise<boolean> {
   try {
-    const selected = await save({
-      filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }],
+    const path = await invoke<string | null>('pick_save_path', {
       defaultPath: store.filePath || 'untitled.md',
     });
-    if (!selected) return false;
+    if (!path) return false;
 
-    const path = selected as string;
     await writeTextFile(path, store.content);
-    await allowAssetDirectoryForFile(path);
     markFileWritten(path, store.content);
     store.setFilePath(path);
     store.setDirty(false);
@@ -141,15 +157,15 @@ export async function requestNewDocument(store: EditorStore): Promise<void> {
 export async function requestOpenDocument(store: EditorStore): Promise<void> {
   const settings = useSettingsStore();
   if (settings.documentMode === 'tabs') {
-    const selected = await open({ multiple: false, filters: FILE_FILTERS });
-    if (!selected) return;
-    await requestOpenFromPath(store, selected as string);
+    const path = await invoke<string | null>('pick_document');
+    if (!path) return;
+    await requestOpenFromPath(store, path);
   } else {
     if (store.filePath || store.isDirty) {
-      const selected = await open({ multiple: false, filters: FILE_FILTERS });
-      if (!selected) return;
+      const path = await invoke<string | null>('pick_document');
+      if (!path) return;
       try {
-        await invoke('open_new_window', { path: selected as string });
+        await invoke('open_new_window', { path });
       } catch (e) {
         await showError('Failed to open new window', e);
       }
@@ -179,7 +195,6 @@ export async function requestOpenFromPath(store: EditorStore, path: string): Pro
     }
     try {
       const content = await readTextFile(path);
-      await allowAssetDirectoryForFile(path);
       if (isActiveTabEmpty(store)) {
         store.loadFile(content, path);
       } else {
@@ -188,7 +203,7 @@ export async function requestOpenFromPath(store: EditorStore, path: string): Pro
       useSettingsStore().addRecentFile(path);
       await updateWindowTitle(store);
     } catch (e) {
-      await showError('Failed to open file', e);
+      await showOpenError(path, e);
     }
   } else {
     if (store.filePath || store.isDirty) {

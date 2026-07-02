@@ -11,7 +11,6 @@ import { readTextFile } from '@tauri-apps/plugin-fs';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { useEditorStore } from '../stores/editor';
 import { useSettingsStore } from '../stores/settings';
-import { allowAssetDirectoryForFile } from '../services/assetScopeService';
 
 type EditorStore = ReturnType<typeof useEditorStore>;
 
@@ -71,10 +70,9 @@ export async function restoreSession(store: EditorStore): Promise<void> {
   let firstLoaded = false;
   for (const saved of session.tabs) {
     try {
+      // fs/asset scope for restored files carries over from the session that
+      // opened them (tauri-plugin-persisted-scope) — no re-grant needed.
       const content = await readTextFile(saved.filePath);
-      // Grant the asset-protocol scope like a regular open would, so relative
-      // images in restored tabs render without reopening the file.
-      await allowAssetDirectoryForFile(saved.filePath);
       if (!firstLoaded) {
         store.loadFile(content, saved.filePath);
         firstLoaded = true;

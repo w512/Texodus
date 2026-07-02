@@ -16,34 +16,29 @@
     },
     "fs:default",
     "fs:allow-stat",
-    {
-      "identifier": "fs:allow-read-dir",
-      "allow": [{ "path": "**" }]
-    },
+    "fs:allow-read-dir",
     "fs:allow-watch",
     "fs:allow-unwatch",
     "fs:allow-mkdir",
     "fs:allow-remove",
     "fs:allow-rename",
+    "fs:allow-read-text-file",
+    "fs:allow-read-file",
+    "fs:allow-write-text-file",
+    "fs:allow-write-file",
+    "fs:allow-copy-file",
     {
-      "identifier": "fs:allow-read-text-file",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-read-file",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-write-text-file",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-write-file",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-copy-file",
-      "allow": [{ "path": "**" }]
+      "identifier": "fs:scope",
+      "deny": [
+        { "path": "$HOME/.ssh" },
+        { "path": "$HOME/.ssh/**" },
+        { "path": "$HOME/.aws" },
+        { "path": "$HOME/.aws/**" },
+        { "path": "$HOME/.gnupg" },
+        { "path": "$HOME/.gnupg/**" },
+        { "path": "$HOME/Library/Keychains" },
+        { "path": "$HOME/Library/Keychains/**" }
+      ]
     },
     "dialog:default",
     "dialog:allow-open",
