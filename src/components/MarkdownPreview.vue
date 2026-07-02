@@ -45,6 +45,13 @@ const DEBOUNCE_MS = 120;
 let lastRenderedHtml = '';
 let forceRerender = true;
 
+// Generation counter guarding the async render pipeline. The debounce only
+// spaces out *starts*: a run parked at an await (mermaid can take hundreds of
+// ms) can still overlap the next one. Each run captures its generation and
+// bails after every await once a newer run has begun, so two runs never
+// interleave their DOM writes.
+let renderGeneration = 0;
+
 // Walks block-level tokens and records the 0-indexed source line each block
 // starts at. Used to attach `data-source-line` anchors for the line-based
 // scroll sync. `space` tokens don't produce DOM output, so we skip them.
@@ -86,6 +93,7 @@ function rewriteLocalImages(container: HTMLElement, filePath: string | null) {
 
 const renderMarkdown = async () => {
   if (!previewRef.value) return;
+  const generation = ++renderGeneration;
 
   // Lex first so we can record per-block source line numbers, then parse the
   // already-tokenised tree (avoids tokenising twice via marked.parse).
@@ -103,21 +111,25 @@ const renderMarkdown = async () => {
   }
 
   await nextTick();
+  if (generation !== renderGeneration || !previewRef.value) return;
 
   // Mermaid replaces matching `<pre>` blocks with new `<div>`s — attach line
   // anchors AFTER so the replacements get the data attribute too.
   await renderMermaidBlocks(previewRef.value, {
     theme: isDarkTheme.value ? 'dark' : 'default',
   });
+  if (generation !== renderGeneration || !previewRef.value) return;
 
-  if (htmlChanged) {
-    attachLineAnchors(previewRef.value, blockLines);
-  }
+  // Attach unconditionally (cheap and idempotent): a run superseded right
+  // after writing innerHTML never reaches this point, and its successor —
+  // seeing identical HTML — would otherwise skip anchoring the fresh DOM.
+  attachLineAnchors(previewRef.value, blockLines);
 
   // Lazy load Prism only when there are remaining code blocks (§6.2)
   if (previewRef.value.querySelector('pre code')) {
     const Prism = await import('prismjs');
     await import('../themes/prism.css');
+    if (generation !== renderGeneration || !previewRef.value) return;
     Prism.default.highlightAllUnder(previewRef.value);
   }
 

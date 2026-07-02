@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   setMockFile,
   setMockDir,
-  clearMockFs,
   setMockInvoke,
   clearMockInvokes,
   resetMockTauri,

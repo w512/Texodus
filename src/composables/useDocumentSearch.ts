@@ -54,9 +54,26 @@ function makeRegex(): RegExp | null {
   const text = queryText.value;
   if (!text) return null;
   let pattern = useRegex.value ? text : escapeRegExp(text);
-  if (wholeWord.value) pattern = `\\b(?:${pattern})\\b`;
+  const flags = caseSensitive.value ? 'g' : 'gi';
+  if (wholeWord.value) {
+    // JS `\b` is ASCII-only — it never matches next to non-Latin letters
+    // (Cyrillic, Greek, CJK…), so whole-word uses Unicode-aware lookarounds.
+    // `\p{…}` requires the `u` flag; the editor target (CM SearchQuery) is
+    // already Unicode-aware, this keeps the preview target consistent.
+    pattern = `(?<![\\p{L}\\p{N}_])(?:${pattern})(?![\\p{L}\\p{N}_])`;
+    try {
+      return new RegExp(pattern, flags + 'u');
+    } catch {
+      return null;
+    }
+  }
+  // Prefer Unicode mode (correct surrogate-pair handling); fall back for user
+  // regexes that are only valid in legacy mode (e.g. the sloppy escape `\-`).
   try {
-    return new RegExp(pattern, caseSensitive.value ? 'g' : 'gi');
+    return new RegExp(pattern, flags + 'u');
+  } catch { /* retry below */ }
+  try {
+    return new RegExp(pattern, flags);
   } catch {
     return null;
   }

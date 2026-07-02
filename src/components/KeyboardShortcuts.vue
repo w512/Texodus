@@ -56,12 +56,16 @@ const SHORTCUTS: ShortcutDef[] = [
 
   // -- Blocks --
   { format: 'task_list',    mac: { meta: true, shift: true,     code: 'KeyT' }, win: { ctrl: true, shift: true,       code: 'KeyT' } },
-  { format: 'table',        mac: { meta: true,                  code: 'KeyT' }, win: { ctrl: true,                    code: 'KeyT' } },
+  // Cmd/Ctrl+T is the native menu's New Tab accelerator (tabs mode) — the OS
+  // consumes it before the webview sees the keydown, so table uses Alt.
+  { format: 'table',        mac: { meta: true, alt: true,       code: 'KeyT' }, win: { ctrl: true, alt: true,         code: 'KeyT' } },
   { format: 'blockquote',   mac: { meta: true, shift: true,     code: 'KeyB' }, win: { ctrl: true, shift: true,       code: 'KeyB' } },
   // Mac ^Shift+U vs ^U → Win Ctrl+Alt+(Shift)+U to dodge Ctrl+U=Underline
   { format: 'ordered_list', mac: { ctrl: true, shift: true,     code: 'KeyU' }, win: { ctrl: true, alt: true, shift: true, code: 'KeyU' } },
   { format: 'list',         mac: { ctrl: true,                  code: 'KeyU' }, win: { ctrl: true, alt: true,         code: 'KeyU' } },
-  { format: 'horizontal_rule', mac: { meta: true, alt: true,    code: 'KeyS' }, win: { ctrl: true, alt: true,         code: 'KeyS' } },
+  // R for "rule": Cmd/Ctrl+Alt+S is the menu's Split View accelerator, and
+  // Cmd+Alt+H is macOS "Hide Others" — both would swallow the keydown.
+  { format: 'horizontal_rule', mac: { meta: true, alt: true,    code: 'KeyR' }, win: { ctrl: true, alt: true,         code: 'KeyR' } },
 
   // -- Headings & paragraph --
   { format: 'paragraph',    mac: { meta: true, shift: true,     code: 'Digit0' }, win: { ctrl: true, shift: true,     code: 'Digit0' } },

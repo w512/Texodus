@@ -38,7 +38,7 @@
       <div class="menu-item" @click="format('table')">
         <span class="icon">▦</span>
         <span class="label">Table</span>
-        <span class="shortcut">⌘T</span>
+        <span class="shortcut">⌥⌘T</span>
       </div>
       
       <div class="menu-divider"></div>
@@ -127,7 +127,7 @@
       <div class="menu-item" @click="format('horizontal_rule')">
         <span class="icon">☰</span>
         <span class="label">Horizontal Rule</span>
-        <span class="shortcut">⌥⌘S</span>
+        <span class="shortcut">⌥⌘R</span>
       </div>
     </div>
   </div>

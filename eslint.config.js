@@ -6,7 +6,9 @@ import globals from 'globals';
 
 export default defineConfig(
   {
-    ignores: ['dist/**', 'src-tauri/**', 'node_modules/**'],
+    // `tolaria/` is an unrelated local-only project with its own (broken here)
+    // eslint config — without the ignore, `eslint .` walks into it and dies.
+    ignores: ['dist/**', 'src-tauri/**', 'node_modules/**', 'tolaria/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
-import { resetMockTauri } from '../mock-tauri';
 
 // Mock assetScopeService (non-Tauri dep)
 vi.mock('./assetScopeService', () => ({
@@ -16,7 +15,7 @@ vi.mock('../stores/settings', () => ({
   }),
 }));
 
-import { readDir } from '@tauri-apps/plugin-fs';
+import { readDir, type DirEntry } from '@tauri-apps/plugin-fs';
 import {
   loadWorkspaceTree,
   loadWorkspaceDirectoryChildren,
@@ -28,6 +27,10 @@ import { useWorkspaceStore } from '../stores/workspace';
 
 const mockedReadDir = vi.mocked(readDir);
 
+function entry(name: string, isDirectory: boolean): DirEntry {
+  return { name, isDirectory, isFile: !isDirectory, isSymlink: false };
+}
+
 beforeEach(() => {
   setActivePinia(createPinia());
 });
@@ -35,9 +38,9 @@ beforeEach(() => {
 describe('loadWorkspaceTree', () => {
   it('builds a sorted tree with directories first', async () => {
     mockedReadDir.mockResolvedValue([
-      { name: 'z.md', isDirectory: false, isFile: true } as any,
-      { name: 'docs', isDirectory: true, isFile: false } as any,
-      { name: 'a.md', isDirectory: false, isFile: true } as any,
+      entry('z.md', false),
+      entry('docs', true),
+      entry('a.md', false),
     ]);
     const tree = await loadWorkspaceTree('/root');
     expect(tree).toHaveLength(3);
@@ -50,11 +53,11 @@ describe('loadWorkspaceTree', () => {
 
   it('filters to md, markdown, txt extensions only', async () => {
     mockedReadDir.mockResolvedValue([
-      { name: 'note.md', isDirectory: false, isFile: true } as any,
-      { name: 'note.MARKDOWN', isDirectory: false, isFile: true } as any,
-      { name: 'readme.txt', isDirectory: false, isFile: true } as any,
-      { name: 'image.png', isDirectory: false, isFile: true } as any,
-      { name: 'script.js', isDirectory: false, isFile: true } as any,
+      entry('note.md', false),
+      entry('note.MARKDOWN', false),
+      entry('readme.txt', false),
+      entry('image.png', false),
+      entry('script.js', false),
     ]);
     const tree = await loadWorkspaceTree('/root');
     expect(tree).toHaveLength(3);
@@ -63,10 +66,10 @@ describe('loadWorkspaceTree', () => {
 
   it('skips hidden and ignored directories', async () => {
     mockedReadDir.mockResolvedValue([
-      { name: '.hidden', isDirectory: true, isFile: false } as any,
-      { name: '.git', isDirectory: true, isFile: false } as any,
-      { name: 'node_modules', isDirectory: true, isFile: false } as any,
-      { name: 'docs', isDirectory: true, isFile: false } as any,
+      entry('.hidden', true),
+      entry('.git', true),
+      entry('node_modules', true),
+      entry('docs', true),
     ]);
     const tree = await loadWorkspaceTree('/root');
     expect(tree).toHaveLength(1);
@@ -74,17 +77,13 @@ describe('loadWorkspaceTree', () => {
   });
 
   it('creates directory nodes without children (lazy loading)', async () => {
-    mockedReadDir.mockResolvedValue([
-      { name: 'docs', isDirectory: true, isFile: false } as any,
-    ]);
+    mockedReadDir.mockResolvedValue([entry('docs', true)]);
     const tree = await loadWorkspaceTree('/root');
     expect(tree[0].children).toBeUndefined();
   });
 
   it('uses forward-slash paths via resolveLocalPath', async () => {
-    mockedReadDir.mockResolvedValue([
-      { name: 'a.md', isDirectory: false, isFile: true } as any,
-    ]);
+    mockedReadDir.mockResolvedValue([entry('a.md', false)]);
     const tree = await loadWorkspaceTree('/root');
     expect(tree[0].path).toBe('/root/a.md');
   });
@@ -98,9 +97,7 @@ describe('loadWorkspaceDirectoryChildren', () => {
         { name: 'docs', path: '/root/docs', kind: 'directory' },
       ]},
     ]);
-    mockedReadDir.mockResolvedValue([
-      { name: 'b.md', isDirectory: false, isFile: true } as any,
-    ]);
+    mockedReadDir.mockResolvedValue([entry('b.md', false)]);
     await loadWorkspaceDirectoryChildren('/root/docs');
     const node = store.tree[0].children![0];
     expect(node.children).toHaveLength(1);
@@ -135,9 +132,7 @@ describe('loadWorkspaceDirectoryChildren', () => {
 
 describe('refreshWorkspaceTree', () => {
   it('loads tree, sets workspace, and clears loading', async () => {
-    mockedReadDir.mockResolvedValue([
-      { name: 'a.md', isDirectory: false, isFile: true } as any,
-    ]);
+    mockedReadDir.mockResolvedValue([entry('a.md', false)]);
     await refreshWorkspaceTree('/root');
     const store = useWorkspaceStore();
     expect(store.rootPath).toBe('/root');

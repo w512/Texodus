@@ -11,6 +11,7 @@ import { readTextFile } from '@tauri-apps/plugin-fs';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { useEditorStore } from '../stores/editor';
 import { useSettingsStore } from '../stores/settings';
+import { allowAssetDirectoryForFile } from '../services/assetScopeService';
 
 type EditorStore = ReturnType<typeof useEditorStore>;
 
@@ -64,16 +65,21 @@ export async function restoreSession(store: EditorStore): Promise<void> {
 
   if (!session.tabs || session.tabs.length === 0) return;
 
-  // Load each saved file into a tab.
-  for (let i = 0; i < session.tabs.length; i++) {
-    const filePath = session.tabs[i].filePath;
+  // Load each saved file into a tab. The first file that actually loads
+  // replaces the initial blank tab — keyed on success, not on index, so a
+  // missing first file doesn't leave a stray empty tab behind.
+  let firstLoaded = false;
+  for (const saved of session.tabs) {
     try {
-      const content = await readTextFile(filePath);
-      if (i === 0) {
-        // Replace the initial blank tab.
-        store.loadFile(content, filePath);
+      const content = await readTextFile(saved.filePath);
+      // Grant the asset-protocol scope like a regular open would, so relative
+      // images in restored tabs render without reopening the file.
+      await allowAssetDirectoryForFile(saved.filePath);
+      if (!firstLoaded) {
+        store.loadFile(content, saved.filePath);
+        firstLoaded = true;
       } else {
-        store.addTab({ content, filePath, isDirty: false });
+        store.addTab({ content, filePath: saved.filePath, isDirty: false });
       }
     } catch {
       // File may have been moved/deleted since last session — skip it.

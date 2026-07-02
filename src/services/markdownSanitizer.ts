@@ -18,7 +18,8 @@ export const MARKED_OPTIONS = {
 const ALLOWED_TAGS = [
   'h1','h2','h3','h4','h5','h6','p','br','hr',
   'ul','ol','li','blockquote','pre','code',
-  'strong','em','del','a','img','table','thead',
+  // 'u' backs the Underline formatting command (useFormatting inserts <u>…</u>).
+  'strong','em','del','u','a','img','table','thead',
   'tbody','tr','th','td','sup','sub','span','div',
   'input',
 ];

@@ -65,7 +65,8 @@ import {
   showToast,
   requestOpenFromPath,
 } from './services/fileService';
-import { basename, resolveLocalPath } from './utils/path';
+import { basename, normalizePath, resolveLocalPath } from './utils/path';
+import { confirmReplaceExisting } from './services/workspaceFileOperations';
 import { applyFormat } from './composables/useFormatting';
 import { setupAppMenu } from './composables/useAppMenu';
 import { useMarkdownPreview } from './composables/useMarkdownPreview';
@@ -266,16 +267,23 @@ onMounted(async () => {
 
       if (onSidebar && workspaceStore.rootPath) {
         const supported = paths.filter((p) => /\.(md|markdown|txt)$/i.test(p));
+        let copied = 0;
         for (const p of supported) {
           const dest = resolveLocalPath(workspaceStore.rootPath, basename(p));
+          // A file dropped from the workspace root itself would be copied onto
+          // itself — fs::copy truncates the destination first, i.e. data loss.
+          if (normalizePath(p) === normalizePath(dest)) continue;
+          // copyFile silently overwrites; ask before replacing an existing item.
+          if (!(await confirmReplaceExisting(dest))) continue;
           try {
             await copyFile(p, dest);
-          } catch {
-            // File may already exist at destination — skip silently.
+            copied++;
+          } catch (e) {
+            console.warn('Failed to copy dropped file:', p, e);
           }
         }
-        if (supported.length > 0) {
-          showToast(`Copied ${supported.length} file${supported.length > 1 ? 's' : ''} to workspace`);
+        if (copied > 0) {
+          showToast(`Copied ${copied} file${copied > 1 ? 's' : ''} to workspace`);
           await refreshWorkspaceTree(workspaceStore.rootPath);
         }
         return;

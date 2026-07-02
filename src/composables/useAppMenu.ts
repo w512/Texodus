@@ -11,6 +11,7 @@ import {
 } from '../services/fileService';
 import { exportPdf, exportHtml, exportTxt } from "../services/exportService";
 import { openWorkspaceFolder } from '../services/workspaceService';
+import { openQuickOpen } from './useQuickOpen';
 import type { useEditorStore } from '../stores/editor';
 import { useSettingsStore } from '../stores/settings';
 import { invoke } from '@tauri-apps/api/core';
@@ -113,7 +114,7 @@ export async function setupAppMenu(store: EditorStore): Promise<void> {
       id: 'file-quick-open',
       text: 'Quick Open…',
       accelerator: 'CmdOrCtrl+P',
-      action: () => { /* handled by keyboard shortcut */ },
+      action: () => { openQuickOpen(); },
     }),
     await MenuItem.new({
       id: 'file-close',

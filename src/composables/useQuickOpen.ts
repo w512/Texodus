@@ -5,15 +5,14 @@
  * computation. Uses fuzzySearch to rank files from the workspace tree.
  */
 
-import { computed, onMounted, onUnmounted, ref, shallowRef, watch, type ComputedRef } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch, type ComputedRef } from 'vue';
 import { useWorkspaceStore } from '../stores/workspace';
 import { useEditorStore } from '../stores/editor';
-import { useSettingsStore } from '../stores/settings';
 import { fuzzySearch, type RankedResult } from '../utils/fuzzyMatch';
-import { type FileTreeNode, findNode } from '../utils/workspaceTree';
-import { basename } from '../utils/path';
+import { type FileTreeNode } from '../utils/workspaceTree';
 import { isMac } from '../utils/platform';
 import { requestOpenFromPath } from '../services/fileService';
+import { listWorkspaceFilesRecursively } from '../services/workspaceService';
 
 export interface QuickOpenFile {
   path: string;
@@ -46,16 +45,45 @@ const query = ref('');
 const selectedIndex = ref(0);
 const isMacPlatform = isMac;
 
-/** Collect files from the workspace tree, sorted alphabetically by name. */
+// Result of the eager whole-workspace scan kicked off by openQuickOpen().
+// The sidebar tree is lazily loaded (children appear only when a directory is
+// expanded), so searching the tree alone would miss most of the workspace.
+const scannedFiles = ref<QuickOpenFile[] | null>(null);
+let scannedRoot: string | null = null;
+let scanToken = 0;
+
+function toQuickOpenFiles(nodes: FileTreeNode[]): QuickOpenFile[] {
+  return nodes
+    .map((node) => ({ path: node.path, name: node.name, displayTitle: node.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function scanWorkspaceFiles(): Promise<void> {
+  const root = useWorkspaceStore().rootPath;
+  if (!root) {
+    scannedFiles.value = null;
+    scannedRoot = null;
+    return;
+  }
+  const token = ++scanToken;
+  try {
+    const files = await listWorkspaceFilesRecursively(root);
+    if (token !== scanToken) return; // superseded by a newer scan
+    scannedRoot = root;
+    scannedFiles.value = toQuickOpenFiles(files);
+  } catch {
+    // Scan failed (permissions, root vanished) — keep the tree fallback.
+  }
+}
+
+/** All searchable files: the eager whole-workspace scan when available (and
+ *  still matching the current root), else whatever the lazily-loaded sidebar
+ *  tree has so far while the scan is in flight. */
 const allFiles: ComputedRef<QuickOpenFile[]> = computed(() => {
   const store = useWorkspaceStore();
+  if (scannedFiles.value && scannedRoot === store.rootPath) return scannedFiles.value;
   if (!store.tree.length) return [];
-  const files = collectFiles(store.tree);
-  return files.map((node) => ({
-    path: node.path,
-    name: node.name,
-    displayTitle: node.name,
-  })).sort((a, b) => a.name.localeCompare(b.name));
+  return toQuickOpenFiles(collectFiles(store.tree));
 });
 
 /** Ranked search results for the current query. */
@@ -63,11 +91,13 @@ const results: ComputedRef<RankedResult<QuickOpenFile>[]> = computed(() => {
   return fuzzySearch(query.value, allFiles.value, (f) => f.name).slice(0, MAX_RESULTS);
 });
 
-/** Open the Quick Open palette. */
-function openQuickOpen(): void {
+/** Open the Quick Open palette. Exported at module level so the native menu
+ *  (useAppMenu) can trigger it alongside the Cmd/Ctrl+P shortcut. */
+export function openQuickOpen(): void {
   query.value = '';
   selectedIndex.value = 0;
   isOpen.value = true;
+  void scanWorkspaceFiles();
 }
 
 /** Close the Quick Open palette. */

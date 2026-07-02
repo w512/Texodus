@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
-import { setMockFile, setMockInvoke, resetMockTauri } from '../mock-tauri';
 
 // Mock workspaceService and assetScopeService (non-Tauri deps)
 vi.mock('./workspaceService', () => ({
@@ -23,6 +22,7 @@ import {
   closeFile,
   requestNewDocument,
   requestOpenDocument,
+  requestOpenFromPath,
 } from './fileService';
 import { useEditorStore } from '../stores/editor';
 import { useSettingsStore } from '../stores/settings';
@@ -147,6 +147,37 @@ describe('requestNewDocument (tabs mode)', () => {
     await requestNewDocument(store);
     expect(store.tabCount).toBe(initialCount + 1);
     expect(invoke).not.toHaveBeenCalled();
+  });
+});
+
+describe('requestOpenFromPath (tabs mode)', () => {
+  it('focuses the existing tab instead of opening a duplicate', async () => {
+    const store = useEditorStore();
+    const settings = useSettingsStore();
+    settings.setDocumentMode('tabs');
+    store.loadFile('first', '/tmp/a.md');
+    const firstId = store.activeTabId;
+    store.addTab({ content: 'second', filePath: '/tmp/b.md', isDirty: false });
+
+    await requestOpenFromPath(store, '/tmp/a.md');
+
+    expect(store.tabCount).toBe(2);
+    expect(store.activeTabId).toBe(firstId);
+    expect(mockedReadTextFile).not.toHaveBeenCalled();
+  });
+
+  it('opens a new tab for a path that is not open yet', async () => {
+    const store = useEditorStore();
+    const settings = useSettingsStore();
+    settings.setDocumentMode('tabs');
+    store.loadFile('first', '/tmp/a.md');
+    mockedReadTextFile.mockResolvedValue('new content');
+
+    await requestOpenFromPath(store, '/tmp/c.md');
+
+    expect(store.tabCount).toBe(2);
+    expect(store.filePath).toBe('/tmp/c.md');
+    expect(store.content).toBe('new content');
   });
 });
 

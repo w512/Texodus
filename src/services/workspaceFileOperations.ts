@@ -24,7 +24,13 @@ async function ensurePathDoesNotExist(path: string, ignorePath?: string): Promis
   }
 }
 
-async function confirmReplaceExisting(path: string): Promise<boolean> {
+/**
+ * When something already exists at `path`, asks the user whether to replace
+ * it and — on confirm — removes it. Returns false when the user declined;
+ * true when the path is free (or was just freed). Exported for the sidebar
+ * drop-copy flow in App.vue, which shares the same overwrite semantics.
+ */
+export async function confirmReplaceExisting(path: string): Promise<boolean> {
   try {
     const info = await stat(path);
     const ok = await confirm(`Replace existing ${info.isDirectory ? 'folder' : 'file'} at:\n${path}?`, {

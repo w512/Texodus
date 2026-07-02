@@ -49,7 +49,7 @@
 import { computed, nextTick, watch } from 'vue';
 import { useQuickOpen } from '../composables/useQuickOpen';
 import { useWorkspaceStore } from '../stores/workspace';
-import { dirname, basename, normalizePath } from '../utils/path';
+import { dirname, normalizePath } from '../utils/path';
 
 const quickOpen = useQuickOpen();
 const workspaceStore = useWorkspaceStore();

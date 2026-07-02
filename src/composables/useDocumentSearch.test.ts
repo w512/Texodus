@@ -261,5 +261,24 @@ describe('useDocumentSearch', () => {
       s.setQuery('foo');
       expect(s.matchCount.value).toBe(3);
     });
+
+    it('whole-word matches Cyrillic words (ASCII \\b never would)', () => {
+      setPreview('<p>слово в слове и снова слово</p>');
+      const s = getSearch();
+      s.open();
+      s.setWholeWord(true);
+      s.setQuery('слово');
+      // Two standalone "слово", not the one embedded in "слове".
+      expect(s.matchCount.value).toBe(2);
+    });
+
+    it('accepts legacy regex escapes that are invalid in Unicode mode', () => {
+      setPreview('<p>a-b</p>');
+      const s = getSearch();
+      s.open();
+      s.setRegex(true);
+      s.setQuery('a\\-b');
+      expect(s.matchCount.value).toBe(1);
+    });
   });
 });

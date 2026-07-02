@@ -22,6 +22,39 @@ export async function loadWorkspaceTree(rootPath: string): Promise<FileTreeNode[
   return await readDirectoryNodes(rootPath);
 }
 
+/**
+ * Eagerly reads the whole workspace and returns a flat list of every visible
+ * file. Used by Quick Open, whose search must cover directories the sidebar
+ * hasn't lazily expanded yet. Applies the same extension/ignore filters as
+ * the sidebar tree; `seen` guards against symlink cycles. Unreadable
+ * subdirectories are skipped rather than failing the whole scan.
+ */
+export async function listWorkspaceFilesRecursively(rootPath: string): Promise<FileTreeNode[]> {
+  const files: FileTreeNode[] = [];
+  const seen = new Set<string>([normalizePath(rootPath)]);
+
+  async function walk(directoryPath: string): Promise<void> {
+    const nodes = await readDirectoryNodes(directoryPath);
+    for (const node of nodes) {
+      if (node.kind === 'file') {
+        files.push(node);
+        continue;
+      }
+      const key = normalizePath(node.path);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      try {
+        await walk(node.path);
+      } catch {
+        // Permission denied or the directory vanished mid-scan — skip it.
+      }
+    }
+  }
+
+  await walk(rootPath);
+  return files;
+}
+
 export async function openWorkspaceFolder(): Promise<void> {
   const selected = await selectWorkspaceFolder();
   if (!selected) return;

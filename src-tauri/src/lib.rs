@@ -52,11 +52,15 @@ fn is_supported_path(path: &str) -> bool {
     lower.ends_with(".md") || lower.ends_with(".markdown") || lower.ends_with(".txt")
 }
 
-/// Picks the first arg that looks like a supported file path. Skips argv[0]
-/// (the binary itself) and any leading flags Tauri may inject.
+/// Collects every arg that looks like a supported file path (multi-select
+/// "Open With" passes several). Skips argv[0] (the binary itself) and any
+/// flags Tauri may inject.
 #[cfg(desktop)]
-fn extract_file_from_args<I: IntoIterator<Item = String>>(args: I) -> Option<String> {
-    args.into_iter().skip(1).find(|a| is_supported_path(a))
+fn extract_files_from_args<I: IntoIterator<Item = String>>(args: I) -> Vec<String> {
+    args.into_iter()
+        .skip(1)
+        .filter(|a| is_supported_path(a))
+        .collect()
 }
 
 /// Spawns a new Texodus window with the project's standard chrome.
@@ -341,21 +345,23 @@ async fn open_new_window(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Capture any path from the initial launch's argv (Windows/Linux double-
+    // Capture any paths from the initial launch's argv (Windows/Linux double-
     // clicks land here). macOS instead delivers files via `RunEvent::Opened`.
     #[cfg(desktop)]
-    let initial = extract_file_from_args(std::env::args());
+    let initial = extract_files_from_args(std::env::args());
     #[cfg(not(desktop))]
-    let initial: Option<String> = None;
+    let initial: Vec<String> = Vec::new();
 
     let state = AppState::default();
-    if let Some(path) = initial {
-        // Init-time, no other threads yet — unwrap is sound.
+    if !initial.is_empty() {
+        // Init-time, no other threads yet — unwrap is sound. All paths queue
+        // for `main`; the frontend drains them one by one (tabs mode keeps
+        // them as tabs, windows mode forwards the extras to new windows).
         state
             .pending_files
             .lock()
             .unwrap()
-            .insert("main".to_string(), vec![path]);
+            .insert("main".to_string(), initial);
     }
 
     let mut builder = tauri::Builder::default()
@@ -374,12 +380,17 @@ pub fn run() {
     #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            if let Some(path) = extract_file_from_args(args) {
-                handle_incoming_file(app, path);
-            } else if let Some(win) = app.get_webview_window("main") {
-                let _ = win.show();
-                let _ = win.unminimize();
-                let _ = win.set_focus();
+            let paths = extract_files_from_args(args);
+            if paths.is_empty() {
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.unminimize();
+                    let _ = win.set_focus();
+                }
+            } else {
+                for path in paths {
+                    handle_incoming_file(app, path);
+                }
             }
         }));
     }
@@ -444,28 +455,31 @@ mod tests {
 
     #[cfg(desktop)]
     #[test]
-    fn extract_file_picks_the_first_supported_arg_after_argv0() {
+    fn extract_files_picks_every_supported_arg_after_argv0() {
         let args = vec![
             "/Applications/Texodus.app/Contents/MacOS/texodus".to_string(),
             "--some-flag".to_string(),
             "/tmp/a.md".to_string(),
             "/tmp/b.md".to_string(),
         ];
-        assert_eq!(extract_file_from_args(args), Some("/tmp/a.md".to_string()));
+        assert_eq!(
+            extract_files_from_args(args),
+            vec!["/tmp/a.md".to_string(), "/tmp/b.md".to_string()]
+        );
     }
 
     #[cfg(desktop)]
     #[test]
-    fn extract_file_skips_argv0_even_when_it_looks_supported() {
+    fn extract_files_skips_argv0_even_when_it_looks_supported() {
         let args = vec!["./texodus.md".to_string()];
-        assert_eq!(extract_file_from_args(args), None);
+        assert!(extract_files_from_args(args).is_empty());
     }
 
     #[cfg(desktop)]
     #[test]
-    fn extract_file_returns_none_without_a_supported_path() {
+    fn extract_files_returns_empty_without_a_supported_path() {
         let args = vec!["texodus".to_string(), "--verbose".to_string()];
-        assert_eq!(extract_file_from_args(args), None);
+        assert!(extract_files_from_args(args).is_empty());
     }
 
     // ── is_main_window_empty ─────────────────────────────────────────────

@@ -27,6 +27,11 @@ describe('sanitizeMarkdownHtml', () => {
     expect(sanitizeMarkdownHtml('<style>body{display:none}</style>')).not.toContain('<style');
   });
 
+  it('keeps <u> produced by the Underline formatting command', () => {
+    const out = sanitizeMarkdownHtml('<p><u>underlined</u></p>');
+    expect(out).toContain('<u>underlined</u>');
+  });
+
   it('keeps the whitelisted structural tags', () => {
     const input = '<h2 id="t">T</h2><blockquote>q</blockquote><table><tbody><tr><td>c</td></tr></tbody></table>';
     const out = sanitizeMarkdownHtml(input);

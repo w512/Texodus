@@ -7,7 +7,7 @@ import { useSettingsStore } from '../stores/settings';
 import { promptUnsavedChanges } from '../composables/useUnsavedPrompt';
 import { refreshWorkspaceTreeIfPathInside } from './workspaceService';
 import { allowAssetDirectoryForFile } from './assetScopeService';
-import { basename } from '../utils/path';
+import { basename, normalizePath } from '../utils/path';
 import { showToast } from '../utils/toast';
 import { markFileWritten } from '../utils/writeSuppression';
 import { flushPendingSave } from '../composables/useAutoSave';
@@ -166,6 +166,17 @@ export async function requestOpenFromPath(store: EditorStore, path: string): Pro
   if (settings.autoSave) await flushPendingSave();
 
   if (settings.documentMode === 'tabs') {
+    // Already open in a tab? Focus it instead of creating a duplicate buffer
+    // that would silently diverge from the first one on edit.
+    const normalized = normalizePath(path);
+    const existing = store.tabs.find(
+      (t) => t.filePath && normalizePath(t.filePath) === normalized,
+    );
+    if (existing) {
+      store.setActiveTab(existing.id);
+      await updateWindowTitle(store);
+      return;
+    }
     try {
       const content = await readTextFile(path);
       await allowAssetDirectoryForFile(path);
