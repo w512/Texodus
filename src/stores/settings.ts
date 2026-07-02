@@ -50,6 +50,11 @@ export const LINE_HEIGHT_MAX = LINE_HEIGHTS[LINE_HEIGHTS.length - 1];
 
 const RECENT_FILES_MAX = 10;
 
+// Single source for the sidebar width bounds. App.vue forwards them to CSS
+// (`--sidebar-min/max-width` on .sidebar-shell); setSidebarWidth clamps to them.
+export const SIDEBAR_MIN_WIDTH = 220;
+export const SIDEBAR_MAX_WIDTH = 420;
+
 /** Separate localStorage key for the default layout mode of new windows.
  *  Not synced via the `storage` event — each open window keeps its own mode. */
 const LAYOUT_MODE_STORAGE_KEY = 'texodus.layoutMode.v1';
@@ -169,7 +174,7 @@ export const useSettingsStore = defineStore('settings', {
       if (m) this.searchHighlightColor = `#${m[1].toLowerCase()}`;
     },
     setSidebarWidth(width: number) {
-      this.sidebarWidth = Math.max(220, Math.min(420, Math.round(width)));
+      this.sidebarWidth = Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, Math.round(width)));
     },
     setLastWorkspacePath(path: string | null) { this.lastWorkspacePath = path; },
     setSettingsVisible(v: boolean) { this.settingsVisible = v; },

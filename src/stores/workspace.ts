@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { type FileTreeNode, findNode } from '../utils/workspaceTree';
+import { normalizePath } from '../utils/path';
 
 export type { FileTreeNode };
 
@@ -63,19 +64,23 @@ export const useWorkspaceStore = defineStore('workspace', {
     expandPath(path: string) {
       if (!this.expandedPaths.includes(path)) this.expandedPaths.push(path);
     },
+    /** Drops `path` and every expanded path inside it (delete flows). */
     removeExpandedPathPrefix(path: string) {
-      const prefix = `${path.replace(/\\/g, '/')}/`;
+      const normalizedPath = normalizePath(path);
+      const prefix = `${normalizedPath}/`;
       this.expandedPaths = this.expandedPaths.filter((p) => {
-        const normalized = p.replace(/\\/g, '/');
-        return normalized !== path.replace(/\\/g, '/') && !normalized.startsWith(prefix);
+        const normalized = normalizePath(p);
+        return normalized !== normalizedPath && !normalized.startsWith(prefix);
       });
     },
+    /** Rewrites `oldPath` (and every expanded path inside it) to live under
+     *  `newPath` — rename/move flows. */
     replaceExpandedPathPrefix(oldPath: string, newPath: string) {
-      const oldNormalized = oldPath.replace(/\\/g, '/');
-      const newNormalized = newPath.replace(/\\/g, '/');
+      const oldNormalized = normalizePath(oldPath);
+      const newNormalized = normalizePath(newPath);
       const oldPrefix = `${oldNormalized}/`;
       this.expandedPaths = this.expandedPaths.map((p) => {
-        const normalized = p.replace(/\\/g, '/');
+        const normalized = normalizePath(p);
         if (normalized === oldNormalized) return newPath;
         if (normalized.startsWith(oldPrefix)) return newNormalized + normalized.slice(oldNormalized.length);
         return p;

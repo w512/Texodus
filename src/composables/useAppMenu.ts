@@ -19,18 +19,35 @@ import { basename } from '../utils/path';
 import { isMac } from '../utils/platform';
 
 type EditorStore = ReturnType<typeof useEditorStore>;
+type SettingsStore = ReturnType<typeof useSettingsStore>;
 
 // macOS hangs submenus under the global menu bar and expects an "app" submenu
 // (About / Hide / Quit) first; Windows/Linux render the menu in the window's
 // own bar and have no such submenu.
 
-// Keep a global reference to prevent the menu (and its JS callbacks)
+// Cached Menu + the input snapshot it was built from. Building costs dozens
+// of IPC round-trips (one per MenuItem.new), while App.vue re-installs the
+// menu on every window focus so this window's callbacks own the global menu
+// again after another window replaced it — re-applying the cached instance is
+// a single call. Holding the reference also prevents the menu's JS callbacks
 // from being garbage collected by V8, which breaks menu actions on Windows.
-// Underscore prefix: assigned but intentionally never read.
-let _activeMenu: Menu | null = null;
+let cachedMenu: Menu | null = null;
+let cachedMenuKey = '';
+
+/** Snapshot of every input that changes the menu's *structure* or the data
+ *  captured in item closures (recent-file paths, Close vs Close Tab label).
+ *  Everything else is read from live stores at click time. */
+function menuInputsKey(store: EditorStore, settingsStore: SettingsStore): string {
+  return JSON.stringify({
+    recentFiles: settingsStore.recentFiles,
+    documentMode: settingsStore.documentMode,
+    closeActsOnTab: settingsStore.documentMode === 'tabs' && store.tabCount > 1,
+  });
+}
 
 /**
- * Builds and installs the native application menu.
+ * Builds (or reuses, when its inputs are unchanged) and installs the native
+ * application menu.
  *
  * `setAsAppMenu()` replaces the default menu wholesale, so we also restate the
  * Edit submenu — otherwise the editor textarea would lose native clipboard /
@@ -39,6 +56,25 @@ let _activeMenu: Menu | null = null;
  */
 export async function setupAppMenu(store: EditorStore): Promise<void> {
   const settingsStore = useSettingsStore();
+  const key = menuInputsKey(store, settingsStore);
+  if (!cachedMenu || key !== cachedMenuKey) {
+    cachedMenu = await buildAppMenu(store, settingsStore);
+    cachedMenuKey = key;
+  }
+
+  if (isMac) {
+    await cachedMenu.setAsAppMenu();
+  } else {
+    try {
+      await cachedMenu.setAsWindowMenu(getCurrentWindow());
+    } catch {
+      // Fallback if setAsWindowMenu fails
+      await cachedMenu.setAsAppMenu();
+    }
+  }
+}
+
+async function buildAppMenu(store: EditorStore, settingsStore: SettingsStore): Promise<Menu> {
 
   const recentMenuItems: (MenuItem | PredefinedMenuItem)[] = [];
   if (settingsStore.recentFiles.length === 0) {
@@ -263,17 +299,5 @@ export async function setupAppMenu(store: EditorStore): Promise<void> {
 
   submenus.push(fileSubmenu, editSubmenu, viewSubmenu, helpSubmenu);
 
-  const menu = await Menu.new({ items: submenus });
-  _activeMenu = menu; // Prevent GC
-
-  if (isMac) {
-    await menu.setAsAppMenu();
-  } else {
-    try {
-      await menu.setAsWindowMenu(getCurrentWindow());
-    } catch {
-      // Fallback if setAsWindowMenu fails
-      await menu.setAsAppMenu();
-    }
-  }
+  return await Menu.new({ items: submenus });
 }

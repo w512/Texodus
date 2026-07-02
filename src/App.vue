@@ -19,7 +19,11 @@
           <div
             v-if="settingsStore.sidebarVisible"
             class="sidebar-shell"
-            :style="{ width: `${settingsStore.sidebarWidth}px` }"
+            :style="{
+              width: `${settingsStore.sidebarWidth}px`,
+              '--sidebar-min-width': `${SIDEBAR_MIN_WIDTH}px`,
+              '--sidebar-max-width': `${SIDEBAR_MAX_WIDTH}px`,
+            }"
           >
             <Sidebar />
             <div
@@ -44,7 +48,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, watch } from 'vue';
-import { useSettingsStore } from './stores/settings';
+import { SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH, useSettingsStore } from './stores/settings';
 import { useEditorStore } from './stores/editor';
 import TitleBar from './components/TitleBar.vue';
 import TabBar from './components/TabBar.vue';
@@ -97,8 +101,6 @@ const handleFormat = (format: string) => applyFormat(format, getEditorView());
 
 // ── Resizable sidebar ─────────────────────────────────────────────────────────
 
-const SIDEBAR_MIN_WIDTH = 220;
-const SIDEBAR_MAX_WIDTH = 420;
 let sidebarResizeStartX = 0;
 let sidebarResizeStartWidth = 0;
 let sidebarResizePointerId: number | null = null;
@@ -115,11 +117,8 @@ function startSidebarResize(event: PointerEvent) {
 
 function handleSidebarResize(event: PointerEvent) {
   if (sidebarResizePointerId !== null && event.pointerId !== sidebarResizePointerId) return;
-  const nextWidth = Math.max(
-    SIDEBAR_MIN_WIDTH,
-    Math.min(SIDEBAR_MAX_WIDTH, sidebarResizeStartWidth + event.clientX - sidebarResizeStartX),
-  );
-  settingsStore.setSidebarWidth(nextWidth);
+  // setSidebarWidth clamps to SIDEBAR_MIN/MAX_WIDTH.
+  settingsStore.setSidebarWidth(sidebarResizeStartWidth + event.clientX - sidebarResizeStartX);
 }
 
 function stopSidebarResize() {
@@ -367,8 +366,10 @@ onUnmounted(() => {
 .sidebar-shell {
   position: relative;
   flex: 0 0 auto;
-  min-width: 220px;
-  max-width: 420px;
+  /* Bounds come from SIDEBAR_MIN/MAX_WIDTH (stores/settings.ts), forwarded
+     as CSS vars on the element — keep the fallbacks in sync. */
+  min-width: var(--sidebar-min-width, 220px);
+  max-width: var(--sidebar-max-width, 420px);
   height: 100%;
 }
 

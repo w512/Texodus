@@ -51,29 +51,6 @@ function targetDirectory(node: FileTreeNode): string {
   return node.kind === 'directory' ? node.path : dirname(node.path);
 }
 
-function removeExpandedPathPrefix(path: string): void {
-  const workspaceStore = useWorkspaceStore();
-  const normalizedPath = normalizePath(path);
-  const prefix = `${normalizedPath}/`;
-  workspaceStore.expandedPaths = workspaceStore.expandedPaths.filter((p) => {
-    const normalized = normalizePath(p);
-    return normalized !== normalizedPath && !normalized.startsWith(prefix);
-  });
-}
-
-function replaceExpandedPathPrefix(oldPath: string, newPath: string): void {
-  const workspaceStore = useWorkspaceStore();
-  const oldNormalized = normalizePath(oldPath);
-  const newNormalized = normalizePath(newPath);
-  const oldPrefix = `${oldNormalized}/`;
-  workspaceStore.expandedPaths = workspaceStore.expandedPaths.map((p) => {
-    const normalized = normalizePath(p);
-    if (normalized === oldNormalized) return newPath;
-    if (normalized.startsWith(oldPrefix)) return newNormalized + normalized.slice(oldNormalized.length);
-    return p;
-  });
-}
-
 async function confirmCurrentDocumentIfAffected(path: string): Promise<boolean> {
   const editorStore = useEditorStore();
   const affectedDirtyTabs = editorStore.tabs.filter(
@@ -157,7 +134,7 @@ export async function renameWorkspaceNode(node: FileTreeNode, nextName: string):
 
   try {
     await rename(node.path, nextPath);
-    replaceExpandedPathPrefix(node.path, nextPath);
+    useWorkspaceStore().replaceExpandedPathPrefix(node.path, nextPath);
     replaceOpenDocumentPathPrefix(node.path, nextPath);
     await updateWindowTitle(useEditorStore());
     await refreshAndReveal(nextPath);
@@ -181,7 +158,7 @@ export async function moveWorkspaceNode(source: FileTreeNode, targetDirectoryPat
 
   try {
     await rename(source.path, nextPath);
-    replaceExpandedPathPrefix(source.path, nextPath);
+    useWorkspaceStore().replaceExpandedPathPrefix(source.path, nextPath);
     replaceOpenDocumentPathPrefix(source.path, nextPath);
     await updateWindowTitle(useEditorStore());
     await refreshAndReveal(nextPath);
@@ -204,7 +181,7 @@ export async function deleteWorkspaceNode(node: FileTreeNode): Promise<void> {
   const editorStore = useEditorStore();
   try {
     await remove(node.path, { recursive: node.kind === 'directory' });
-    removeExpandedPathPrefix(node.path);
+    useWorkspaceStore().removeExpandedPathPrefix(node.path);
     // Reset every tab whose file lived inside the deleted path — not just the
     // active one — so their file-watchers don't keep failing to re-read a gone
     // file. Mirrors rename/move, which update all affected tabs.

@@ -17,6 +17,7 @@ import { useDocumentSearch } from '../composables/useDocumentSearch';
 import { useResolvedTheme } from '../composables/useResolvedTheme';
 import { lexMarkdown, parseMarkdownTokens, sanitizeMarkdownHtml } from '../services/markdownSanitizer';
 import { renderMermaidBlocks } from '../services/mermaidRenderer';
+import { ensurePrismLanguages, highlightUnder } from '../services/prismHighlighter';
 import { type Token } from 'marked';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { dirname, hasUrlScheme, isAbsolutePath, resolveLocalPath } from '../utils/path';
@@ -125,12 +126,12 @@ const renderMarkdown = async () => {
   // seeing identical HTML — would otherwise skip anchoring the fresh DOM.
   attachLineAnchors(previewRef.value, blockLines);
 
-  // Lazy load Prism only when there are remaining code blocks (§6.2)
-  if (previewRef.value.querySelector('pre code')) {
-    const Prism = await import('prismjs');
-    await import('../themes/prism.css');
+  // Lazy load Prism — core plus per-language components — only when
+  // highlightable code blocks remain (§6.2); mermaid fences are gone by now.
+  if (previewRef.value.querySelector('pre code[class*="language-"]')) {
+    await ensurePrismLanguages(previewRef.value);
     if (generation !== renderGeneration || !previewRef.value) return;
-    Prism.default.highlightAllUnder(previewRef.value);
+    highlightUnder(previewRef.value);
   }
 
   // Re-apply search highlights against the freshly rendered DOM — the previous
