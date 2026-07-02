@@ -1,6 +1,6 @@
 [package]
 name = "texodus"
-version = "4.1.0"
+version = "4.2.0"
 description = "Texodus is a modern, fast, and beautiful Markdown viewer and editor"
 authors = ["Nick"]
 edition = "2021"
