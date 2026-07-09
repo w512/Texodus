@@ -44,6 +44,10 @@ function initMermaid(mermaid: MermaidModule, opts: MermaidRenderOptions): void {
     startOnLoad: false,
     theme: opts.theme === 'dark' ? 'dark' : 'default',
     securityLevel: 'strict',
+    // Keep labels as plain SVG <text>/<tspan> nodes. Mermaid's default HTML
+    // labels are emitted via <foreignObject>, which we intentionally strip in
+    // sanitizeMermaidSvg(), leaving diagrams with empty-looking boxes.
+    htmlLabels: false,
   });
 }
 

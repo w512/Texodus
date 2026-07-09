@@ -76,17 +76,6 @@
         <span class="label">Block Code</span>
         <span class="shortcut">⇧⌘K</span>
       </div>
-      <div class="menu-item" @click="format('inline_math')">
-        <span class="icon">√x</span>
-        <span class="label">Inline Math</span>
-        <span class="shortcut">^K</span>
-      </div>
-      <div class="menu-item" @click="format('block_math')">
-        <span class="icon">√x</span>
-        <span class="label">Block Math</span>
-        <span class="shortcut">^⇧K</span>
-      </div>
-      
       <div class="menu-divider"></div>
       
       <div class="menu-item" @click="format('heading1')">

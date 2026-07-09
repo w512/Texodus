@@ -124,16 +124,6 @@ describe('applyFormat', () => {
     expect(view.state.doc.toString()).toBe('### title');
   });
 
-  it('wraps with $$ for block math', () => {
-    applyFormat('block_math', view);
-    expect(view.state.doc.toString()).toBe('\n$$\nx = y\n$$\n');
-  });
-
-  it('wraps with $ for inline math', () => {
-    applyFormat('inline_math', view);
-    expect(view.state.doc.toString()).toBe('$x$');
-  });
-
   it('is a no-op for an unknown format', () => {
     view = makeView('unchanged');
     applyFormat('nonexistent_format', view);

@@ -27,7 +27,7 @@ interface ShortcutDef {
 
 // File shortcuts (New / Open / Save / Save As) are owned by the native app
 // menu's accelerators — see composables/useAppMenu.ts. This handler covers
-// the 17 formatting shortcuts and only fires while the editor textarea is focused.
+// the formatting shortcuts and only fires while the editor textarea is focused.
 //
 // Each entry specifies the EXACT modifier set for both platforms; matching is
 // strict equality, so combos like Cmd+Ctrl+K won't accidentally trip Cmd+K.
@@ -47,12 +47,9 @@ const SHORTCUTS: ShortcutDef[] = [
   { format: 'strikethrough',mac: { meta: true, shift: true,     code: 'KeyE' }, win: { ctrl: true, shift: true,       code: 'KeyE' } },
   { format: 'link',         mac: {             ctrl: true, shift: true, code: 'KeyL' }, win: { ctrl: true, shift: true, code: 'KeyL' } },
 
-  // -- Code & math --
+  // -- Code --
   { format: 'block_code',   mac: { meta: true, shift: true,     code: 'KeyK' }, win: { ctrl: true, shift: true,       code: 'KeyK' } },
   { format: 'code',         mac: { meta: true,                  code: 'KeyK' }, win: { ctrl: true,                    code: 'KeyK' } },
-  // Mac ^K vs ^Shift+K (true ctrl, no cmd) → Win Ctrl+Alt+K to avoid Ctrl+K collision
-  { format: 'block_math',   mac: { ctrl: true, shift: true,     code: 'KeyK' }, win: { ctrl: true, shift: true, alt: true, code: 'KeyK' } },
-  { format: 'inline_math',  mac: { ctrl: true,                  code: 'KeyK' }, win: { ctrl: true, alt: true,         code: 'KeyK' } },
 
   // -- Blocks --
   { format: 'task_list',    mac: { meta: true, shift: true,     code: 'KeyT' }, win: { ctrl: true, shift: true,       code: 'KeyT' } },

@@ -53,8 +53,6 @@ export function applyFormat(format: string, view: EditorView | null): void {
     case 'blockquote':     prependLine(view, '> '); break;
     case 'code':           wrapSelection(view, '`', '`', 'code'); break;
     case 'block_code':     wrapSelection(view, '\n```\n', '\n```\n', 'code block'); break;
-    case 'inline_math':    wrapSelection(view, '$', '$', 'x'); break;
-    case 'block_math':     wrapSelection(view, '\n$$\n', '\n$$\n', 'x = y'); break;
     case 'heading1':       prependLine(view, '# '); break;
     case 'heading2':       prependLine(view, '## '); break;
     case 'heading3':       prependLine(view, '### '); break;
