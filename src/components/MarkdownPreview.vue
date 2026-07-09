@@ -15,7 +15,7 @@ import { useSettingsStore } from '../stores/settings';
 import { useMarkdownPreview } from '../composables/useMarkdownPreview';
 import { useDocumentSearch } from '../composables/useDocumentSearch';
 import { useResolvedTheme } from '../composables/useResolvedTheme';
-import { lexMarkdown, parseMarkdownTokens, sanitizeMarkdownHtml } from '../services/markdownSanitizer';
+import { lexMarkdown, parseMarkdownTokens, renderFrontmatterHtml, sanitizeMarkdownHtml, splitRenderableFrontmatter } from '../services/markdownSanitizer';
 import { renderMermaidBlocks } from '../services/mermaidRenderer';
 import { ensurePrismLanguages, highlightUnder } from '../services/prismHighlighter';
 import { type Token } from 'marked';
@@ -63,9 +63,10 @@ let renderGeneration = 0;
 // Walks block-level tokens and records the 0-indexed source line each block
 // starts at. Used to attach `data-source-line` anchors for the line-based
 // scroll sync. `space` tokens don't produce DOM output, so we skip them.
-function collectBlockLines(tokens: Token[]): number[] {
+// `startLine` accounts for source lines (frontmatter) stripped before lexing.
+function collectBlockLines(tokens: Token[], startLine: number): number[] {
   const lines: number[] = [];
-  let line = 0;
+  let line = startLine;
   for (const token of tokens) {
     if (token.type !== 'space') lines.push(line);
     const raw = (token as { raw?: string }).raw ?? '';
@@ -103,11 +104,18 @@ const renderMarkdown = async () => {
   if (!previewRef.value) return;
   const generation = ++renderGeneration;
 
+  // Frontmatter never reaches marked (it would misparse as hr + setext h2);
+  // it renders as its own metadata block anchored at source line 0, and the
+  // body's line anchors shift down by the lines it consumed.
+  const { frontmatterYaml, body, bodyLineOffset } = splitRenderableFrontmatter(editorStore.content);
+
   // Lex first so we can record per-block source line numbers, then parse the
   // already-tokenised tree (avoids tokenising twice via marked.parse).
-  const tokens = lexMarkdown(editorStore.content);
-  const blockLines = collectBlockLines(tokens);
-  const html = parseMarkdownTokens(tokens);
+  const tokens = lexMarkdown(body);
+  const blockLines = collectBlockLines(tokens, bodyLineOffset);
+  if (frontmatterYaml !== null) blockLines.unshift(0);
+  const html = (frontmatterYaml !== null ? renderFrontmatterHtml(frontmatterYaml) : '')
+    + parseMarkdownTokens(tokens);
   const clean = sanitizeMarkdownHtml(html);
 
   const htmlChanged = forceRerender || clean !== lastRenderedHtml;
@@ -192,13 +200,17 @@ watch(
 
 const toggleMarkdownCheckbox = (index: number) => {
   const original = editorStore.content;
-  const checkbox = collectMarkdownTaskCheckboxes(original)[index];
+  // The preview renders only the body (frontmatter is a separate block), so
+  // index against the body and shift positions back to full-document offsets.
+  const { body, bodyCharOffset } = splitRenderableFrontmatter(original);
+  const checkbox = collectMarkdownTaskCheckboxes(body)[index];
   if (!checkbox) return;
 
+  const markerStart = checkbox.markerStart + bodyCharOffset;
   editorStore.updateContent(
-    original.substring(0, checkbox.markerStart)
+    original.substring(0, markerStart)
     + (checkbox.checked ? '[ ]' : '[x]')
-    + original.substring(checkbox.markerStart + 3),
+    + original.substring(markerStart + 3),
   );
 };
 
@@ -362,6 +374,23 @@ onUnmounted(() => {
 :deep(pre code) {
   color: var(--code-text);
   font-family: var(--editor-font, monospace);
+}
+
+/* ── YAML frontmatter ─────────────────────────────────────────── */
+/* Metadata, not prose: a quiet hairline-framed block instead of the
+   standard code-chip look. Prism still colors the yaml inside. */
+:deep(pre.frontmatter) {
+  background: transparent;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  border-radius: 0;
+  padding: 0.75rem 0.15rem;
+  margin: 0 0 1.6rem;
+  font-size: 12px;
+}
+
+:deep(pre.frontmatter code) {
+  color: var(--text-muted);
 }
 
 :deep(code):not(:where(pre *)) {

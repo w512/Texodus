@@ -8,6 +8,7 @@
  */
 import { marked, type MarkedOptions, type Token, type Tokens } from 'marked';
 import DOMPurify from 'dompurify';
+import { detectFrontmatterState, extractFrontmatterBody, splitFrontmatter } from '../utils/frontmatter';
 
 export const MARKED_OPTIONS = {
   breaks: true,
@@ -21,7 +22,15 @@ export const MARKED_OPTIONS = {
 // against `collectMarkdownTaskCheckboxes` and clicks toggle the wrong item.
 // (`disabled` is emitted like stock marked but stripped by the sanitizer —
 // that's what makes the checkboxes clickable in the preview.)
+//
+// MARKED_OPTIONS is folded into the defaults here, and lexMarkdown /
+// parseMarkdownTokens below call marked without an options argument: marked's
+// `lexer(src, options)` / `parser(tokens, options)` *replace* the defaults
+// with explicit options (`options ?? this.defaults`, no merge), which silently
+// drops this renderer override — data-task disappears and preview checkbox
+// clicks stop mapping back to source markers.
 marked.use({
+  ...MARKED_OPTIONS,
   renderer: {
     checkbox({ checked }: Tokens.Checkbox): string {
       return `<input ${checked ? 'checked="" ' : ''}disabled="" type="checkbox" data-task="">`;
@@ -45,11 +54,11 @@ export function sanitizeMarkdownHtml(rawHtml: string): string {
 }
 
 export function lexMarkdown(markdown: string): Token[] {
-  return marked.lexer(markdown, MARKED_OPTIONS);
+  return marked.lexer(markdown);
 }
 
 export function parseMarkdownTokens(tokens: Token[]): string {
-  return marked.parser(tokens, MARKED_OPTIONS) as string;
+  return marked.parser(tokens) as string;
 }
 
 export function renderMarkdownToHtml(markdown: string): string {
@@ -57,5 +66,61 @@ export function renderMarkdownToHtml(markdown: string): string {
 }
 
 export async function renderMarkdownToSafeHtml(markdown: string): Promise<string> {
-  return sanitizeMarkdownHtml(renderMarkdownToHtml(markdown));
+  const { frontmatterYaml, body } = splitRenderableFrontmatter(markdown);
+  const frontmatterHtml = frontmatterYaml !== null ? renderFrontmatterHtml(frontmatterYaml) : '';
+  return sanitizeMarkdownHtml(frontmatterHtml + renderMarkdownToHtml(body));
+}
+
+/**
+ * YAML frontmatter isn't markdown: fed straight to `marked`, its `---`
+ * delimiters parse as `<hr>`s and the `key: value` lines collapse into a
+ * setext `<h2>` — giant bold text at the top of the document. Every render
+ * surface (live preview, HTML export, PDF export) must split it off first
+ * and render it as a dedicated metadata block.
+ */
+export interface RenderableMarkdown {
+  /** Raw YAML between the `---` delimiters, or null when the document has none. */
+  frontmatterYaml: string | null;
+  /** The markdown that should reach the marked lexer. */
+  body: string;
+  /** Source lines consumed by the frontmatter block — shift body line anchors by this. */
+  bodyLineOffset: number;
+  /** Source chars consumed by the frontmatter block — shift body char positions by this. */
+  bodyCharOffset: number;
+}
+
+const NO_FRONTMATTER: RenderableMarkdown = Object.freeze({
+  frontmatterYaml: null,
+  body: '',
+  bodyLineOffset: 0,
+  bodyCharOffset: 0,
+});
+
+export function splitRenderableFrontmatter(markdown: string): RenderableMarkdown {
+  // Only a block detected as real frontmatter (opens on the first line and
+  // has at least one `key:` line) is split off; an empty or key-less block is
+  // more likely deliberate markdown (`---` rules) and stays untouched.
+  if (detectFrontmatterState(markdown) !== 'valid') {
+    return { ...NO_FRONTMATTER, body: markdown };
+  }
+  const [raw, body] = splitFrontmatter(markdown);
+  let lineOffset = 0;
+  for (const c of raw) if (c === '\n') lineOffset++;
+  return {
+    frontmatterYaml: extractFrontmatterBody(markdown) ?? '',
+    body,
+    bodyLineOffset: lineOffset,
+    bodyCharOffset: raw.length,
+  };
+}
+
+function escapeHtmlText(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** Renders split-off frontmatter as a muted metadata block. The
+ *  `language-yaml` class lets the preview's lazy Prism loader pick it up for
+ *  key/value highlighting; `frontmatter` styles it apart from real code. */
+export function renderFrontmatterHtml(frontmatterYaml: string): string {
+  return `<pre class="frontmatter"><code class="language-yaml">${escapeHtmlText(frontmatterYaml)}</code></pre>\n`;
 }

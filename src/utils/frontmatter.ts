@@ -85,7 +85,8 @@ function frontmatterContentStart(content: MarkdownContent): number | null {
   return null;
 }
 
-function extractFrontmatterBody(content: MarkdownContent | null): FrontmatterBody | null {
+/** Raw YAML between the `---` delimiters, or null when content has no frontmatter block. */
+export function extractFrontmatterBody(content: MarkdownContent | null): FrontmatterBody | null {
   if (!content) return null;
   const start = frontmatterContentStart(content);
   if (start === null) return null;

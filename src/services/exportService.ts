@@ -2,7 +2,7 @@ import { save, message } from "@tauri-apps/plugin-dialog";
 import { writeTextFile, writeFile, readFile } from "@tauri-apps/plugin-fs";
 import { type Token, type Tokens } from "marked";
 import type { Content, TDocumentDefinitions } from "pdfmake/interfaces";
-import { lexMarkdown, renderMarkdownToHtml, sanitizeMarkdownHtml } from "./markdownSanitizer";
+import { lexMarkdown, renderFrontmatterHtml, renderMarkdownToHtml, sanitizeMarkdownHtml, splitRenderableFrontmatter } from "./markdownSanitizer";
 import { renderMermaidBlocks, renderMermaidSvg } from "./mermaidRenderer";
 import { dirname, hasUrlScheme, isAbsolutePath, resolveLocalPath } from "../utils/path";
 import { showToast } from "../utils/toast";
@@ -63,6 +63,7 @@ const EXPORT_CSS = `
   th, td { border: 1px solid #ddd; padding: 0.5em 0.85em; }
   th { background: #f5f7fa; font-weight: 600; }
   hr { border: none; border-top: 2px solid #e0e0e0; margin: 1.5em 0; }
+  pre.frontmatter { background: transparent; border-top: 1px solid #e0e0e0; border-bottom: 1px solid #e0e0e0; border-radius: 0; padding: 0.75rem 0.15rem; margin: 0 0 1.6rem; font-size: 12px; color: #666; }
   input[type="checkbox"] { margin-right: 0.5em; accent-color: #2563eb; vertical-align: middle; }
   .mermaid-preview-container {
     background: #f8fafc;
@@ -157,7 +158,11 @@ async function inlineLocalImages(container: HTMLElement, filePath: string | null
  * doesn't violate the app's strict CSP.
  */
 export async function renderExportHtml(markdown: string, title: string, filePath: string | null = null): Promise<string> {
-  const bodyHtml = sanitizeMarkdownHtml(renderMarkdownToHtml(markdown));
+  // Same frontmatter split as the live preview — without it marked misparses
+  // the block as hr + setext h2 (no Prism in exports, so the block is plain).
+  const { frontmatterYaml, body } = splitRenderableFrontmatter(markdown);
+  const frontmatterHtml = frontmatterYaml !== null ? renderFrontmatterHtml(frontmatterYaml) : "";
+  const bodyHtml = sanitizeMarkdownHtml(frontmatterHtml + renderMarkdownToHtml(body));
 
   // Inline mermaid as SVG via a detached container so the export file has
   // zero external dependencies. The container is never attached to the DOM
@@ -629,7 +634,8 @@ async function preRenderMermaidPngs(
 }
 
 async function buildPdfDocDefinition(markdown: string, title: string, filePath: string | null): Promise<TDocumentDefinitions> {
-  const tokens = lexMarkdown(markdown);
+  const { frontmatterYaml, body } = splitRenderableFrontmatter(markdown);
+  const tokens = lexMarkdown(body);
 
   const mermaidPngs: MermaidPngMap = new WeakMap();
   const mermaidTokens = collectMermaidCodeTokens(tokens);
@@ -643,9 +649,14 @@ async function buildPdfDocDefinition(markdown: string, title: string, filePath: 
     await preRenderImages(imageTokens, filePath ? dirname(filePath) : "", images);
   }
 
+  const content = blockTokensToContent(tokens, mermaidPngs, images);
+  if (frontmatterYaml !== null) {
+    content.unshift({ text: frontmatterYaml, style: "frontmatter", preserveLeadingSpaces: true });
+  }
+
   return {
     info: { title },
-    content: blockTokensToContent(tokens, mermaidPngs, images),
+    content,
     defaultStyle: { font: "Roboto", fontSize: 11, lineHeight: 1.4, color: "#1a1d23" },
     pageMargins: [50, 50, 50, 50],
     styles: {
@@ -659,6 +670,7 @@ async function buildPdfDocDefinition(markdown: string, title: string, filePath: 
       code: { fontSize: 9.5, background: "#f0f0f0", margin: [0, 4, 0, 4] },
       codespan: { background: "#f0f0f0" },
       blockquote: { color: "#555", italics: true },
+      frontmatter: { fontSize: 9, color: "#666", margin: [0, 0, 0, 12] },
       tableHeader: { bold: true, fillColor: "#f5f7fa" },
     },
   };
