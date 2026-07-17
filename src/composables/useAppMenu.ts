@@ -34,6 +34,17 @@ type SettingsStore = ReturnType<typeof useSettingsStore>;
 let cachedMenu: Menu | null = null;
 let cachedMenuKey = '';
 
+// Tauri dispatches menu events through one app-global HashMap keyed by the
+// item id *string* (MenuChannels in tauri's menu plugin) — registered at item
+// creation, not at setAsAppMenu. If two windows build items with the same id,
+// the last build silently owns that id app-wide: accelerators and clicks then
+// fire in the wrong window (or nowhere, once that window closes). Suffixing
+// every action-carrying id with this window's label keeps each window's
+// handlers on distinct keys, so events always route to the window whose menu
+// is installed.
+const windowLabel = getCurrentWindow().label;
+const mid = (id: string): string => `${id}--${windowLabel}`;
+
 /** Snapshot of every input that changes the menu's *structure* or the data
  *  captured in item closures (recent-file paths, Close vs Close Tab label).
  *  Everything else is read from live stores at click time. */
@@ -79,7 +90,7 @@ async function buildAppMenu(store: EditorStore, settingsStore: SettingsStore): P
   const recentMenuItems: (MenuItem | PredefinedMenuItem)[] = [];
   if (settingsStore.recentFiles.length === 0) {
     recentMenuItems.push(await MenuItem.new({
-      id: 'recent-empty',
+      id: mid('recent-empty'),
       text: 'No Recent Files',
       enabled: false,
       action: () => {},
@@ -92,14 +103,14 @@ async function buildAppMenu(store: EditorStore, settingsStore: SettingsStore): P
         ? `${basename(filePath)}  —  ${parts[parts.length - 2]}`
         : basename(filePath);
       recentMenuItems.push(await MenuItem.new({
-        id: `recent-${i}`,
+        id: mid(`recent-${i}`),
         text: label,
         action: () => { void requestOpenFromPath(store, filePath); },
       }));
     }
     recentMenuItems.push(await PredefinedMenuItem.new({ item: 'Separator' }));
     recentMenuItems.push(await MenuItem.new({
-      id: 'recent-clear',
+      id: mid('recent-clear'),
       text: 'Clear Recent Files',
       action: () => { settingsStore.clearRecentFiles(); },
     }));
@@ -116,7 +127,7 @@ async function buildAppMenu(store: EditorStore, settingsStore: SettingsStore): P
 
   if (inTabsMode) {
     fileItems.push(await MenuItem.new({
-      id: 'file-new-tab',
+      id: mid('file-new-tab'),
       text: 'New Tab',
       accelerator: 'CmdOrCtrl+T',
       action: () => { void requestNewDocument(store); },
@@ -125,7 +136,7 @@ async function buildAppMenu(store: EditorStore, settingsStore: SettingsStore): P
 
   fileItems.push(
     await MenuItem.new({
-      id: 'file-new',
+      id: mid('file-new'),
       text: 'New Window',
       accelerator: 'CmdOrCtrl+N',
       action: async () => {
@@ -134,26 +145,26 @@ async function buildAppMenu(store: EditorStore, settingsStore: SettingsStore): P
       },
     }),
     await MenuItem.new({
-      id: 'file-open',
+      id: mid('file-open'),
       text: 'Open…',
       accelerator: 'CmdOrCtrl+O',
       action: () => { void requestOpenDocument(store); },
     }),
     await MenuItem.new({
-      id: 'file-open-folder',
+      id: mid('file-open-folder'),
       text: 'Open Folder…',
       accelerator: 'CmdOrCtrl+Shift+O',
       action: () => { void openWorkspaceFolder(); },
     }),
     openRecentSubmenu,
     await MenuItem.new({
-      id: 'file-quick-open',
+      id: mid('file-quick-open'),
       text: 'Quick Open…',
       accelerator: 'CmdOrCtrl+P',
       action: () => { openQuickOpen(); },
     }),
     await MenuItem.new({
-      id: 'file-close',
+      id: mid('file-close'),
       text: inTabsMode && store.tabCount > 1 ? 'Close Tab' : 'Close',
       accelerator: 'CmdOrCtrl+W',
       action: () => { void requestCloseDocument(store); },
@@ -164,13 +175,13 @@ async function buildAppMenu(store: EditorStore, settingsStore: SettingsStore): P
     fileItems.push(
       await PredefinedMenuItem.new({ item: 'Separator' }),
       await MenuItem.new({
-        id: 'file-next-tab',
+        id: mid('file-next-tab'),
         text: 'Next Tab',
         accelerator: 'CmdOrCtrl+Alt+Right',
         action: () => { store.activateNextTab(); },
       }),
       await MenuItem.new({
-        id: 'file-prev-tab',
+        id: mid('file-prev-tab'),
         text: 'Previous Tab',
         accelerator: 'CmdOrCtrl+Alt+Left',
         action: () => { store.activatePreviousTab(); },
@@ -181,32 +192,32 @@ async function buildAppMenu(store: EditorStore, settingsStore: SettingsStore): P
   fileItems.push(
     await PredefinedMenuItem.new({ item: 'Separator' }),
     await MenuItem.new({
-      id: 'file-export-pdf',
+      id: mid('file-export-pdf'),
       text: 'Export as PDF…',
       accelerator: 'CmdOrCtrl+Shift+P',
       action: async () => { await exportPdf(store.content, store.filePath); },
     }),
     await MenuItem.new({
-      id: 'file-export-html',
+      id: mid('file-export-html'),
       text: 'Export as HTML…',
       accelerator: 'CmdOrCtrl+Shift+H',
       action: async () => { await exportHtml(store.content, store.filePath); },
     }),
     await MenuItem.new({
-      id: 'file-export-txt',
+      id: mid('file-export-txt'),
       text: 'Export as TXT…',
       accelerator: 'CmdOrCtrl+Shift+X',
       action: async () => { await exportTxt(store.content, store.filePath); },
     }),
     await PredefinedMenuItem.new({ item: 'Separator' }),
     await MenuItem.new({
-      id: 'file-save',
+      id: mid('file-save'),
       text: 'Save',
       accelerator: 'CmdOrCtrl+S',
       action: () => { void saveFile(store); },
     }),
     await MenuItem.new({
-      id: 'file-save-as',
+      id: mid('file-save-as'),
       text: 'Save As…',
       accelerator: 'CmdOrCtrl+Shift+S',
       action: () => { void saveFileAs(store); },
@@ -237,26 +248,26 @@ async function buildAppMenu(store: EditorStore, settingsStore: SettingsStore): P
     text: 'View',
     items: [
       await MenuItem.new({
-        id: 'view-toggle-sidebar',
+        id: mid('view-toggle-sidebar'),
         text: 'Toggle Sidebar',
         accelerator: 'CmdOrCtrl+Alt+B',
         action: () => { settingsStore.toggleSidebar(); },
       }),
       await PredefinedMenuItem.new({ item: 'Separator' }),
       await MenuItem.new({
-        id: 'view-split',
+        id: mid('view-split'),
         text: 'Split View',
         accelerator: 'CmdOrCtrl+Alt+S',
         action: () => { settingsStore.setLayoutMode('split'); },
       }),
       await MenuItem.new({
-        id: 'view-focus-editor',
+        id: mid('view-focus-editor'),
         text: 'Focus Editor',
         accelerator: 'CmdOrCtrl+Alt+E',
         action: () => { settingsStore.setLayoutMode('focus'); },
       }),
       await MenuItem.new({
-        id: 'view-focus-preview',
+        id: mid('view-focus-preview'),
         text: 'Focus Preview',
         accelerator: 'CmdOrCtrl+Alt+P',
         action: () => { settingsStore.setLayoutMode('preview'); },
@@ -268,7 +279,7 @@ async function buildAppMenu(store: EditorStore, settingsStore: SettingsStore): P
     text: 'Help',
     items: [
       await MenuItem.new({
-        id: 'help-about',
+        id: mid('help-about'),
         text: isMac ? 'About Texodus' : 'About',
         action: () => { settingsStore.setAboutVisible(true); },
       }),
@@ -281,7 +292,7 @@ async function buildAppMenu(store: EditorStore, settingsStore: SettingsStore): P
       text: 'Texodus',
       items: [
         await MenuItem.new({
-          id: 'app-about',
+          id: mid('app-about'),
           text: 'About Texodus',
           action: () => { settingsStore.setAboutVisible(true); },
         }),
