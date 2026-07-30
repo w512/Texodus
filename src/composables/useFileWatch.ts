@@ -1,8 +1,8 @@
 import { onUnmounted, watch as vueWatch } from 'vue';
 import { readTextFile, stat, watch as watchFs, type UnwatchFn } from '@tauri-apps/plugin-fs';
 import { useEditorStore, type Tab } from '../stores/editor';
-import { basename, dirname } from '../utils/path';
-import { promptUnsavedChanges } from './useUnsavedPrompt';
+import { basename, dirname, isSamePath, normalizePath } from '../utils/path';
+import { promptUnsavedChanges, whenPromptsIdle } from './useUnsavedPrompt';
 import { saveFile, showToast, updateWindowTitle } from '../services/fileService';
 import { wasWrittenWithContent } from '../utils/writeSuppression';
 import { cleanupTauriEventListeners } from '../utils/tauriEventCleanup';
@@ -10,7 +10,15 @@ import { cleanupTauriEventListeners } from '../utils/tauriEventCleanup';
 type EditorStore = ReturnType<typeof useEditorStore>;
 
 function uniqueOpenPaths(tabs: Tab[]): string[] {
-  return [...new Set(tabs.map((tab) => tab.filePath).filter((path): path is string => Boolean(path)))].sort();
+  // Keyed on the normalised path so one file opened under two spellings
+  // (`\` vs `/` after a folder rename on Windows) is watched once, not twice.
+  const byNormalized = new Map<string, string>();
+  for (const tab of tabs) {
+    if (!tab.filePath) continue;
+    const key = normalizePath(tab.filePath);
+    if (!byNormalized.has(key)) byNormalized.set(key, tab.filePath);
+  }
+  return [...byNormalized.values()].sort();
 }
 
 export function useFileWatch(store: EditorStore): void {
@@ -20,8 +28,11 @@ export function useFileWatch(store: EditorStore): void {
   const failedReloadToastShown = new Set<string>();
   let pollTimer: number | null = null;
 
+  // Normalised so the watched-directory set keys on one spelling per directory
+  // (the fs plugin canonicalises the path, so forward slashes are fine on
+  // Windows — the same form `resolveLocalPath` already hands to readDir/stat).
   function watchRootForPath(path: string): string {
-    return dirname(path) || path;
+    return normalizePath(dirname(path) || path);
   }
 
   function stopWatching(dir: string) {
@@ -74,12 +85,14 @@ export function useFileWatch(store: EditorStore): void {
       if (knownDiskVersionByPath.get(path) === version) return;
       knownDiskVersionByPath.set(path, version);
       failedReloadToastShown.delete(path);
-      const matchingIds = store.tabs
-        .filter((tab) => tab.filePath === path)
-        .map((tab) => tab.id);
+      // Normalised compare: a folder rename rewrites open tabs to forward
+      // slashes while this watcher's bookkeeping still holds the spelling the
+      // file was opened with, so `===` can miss the very tab that changed.
+      const matchesPath = (tab: Tab) => Boolean(tab.filePath && isSamePath(tab.filePath, path));
+      const matchingIds = store.tabs.filter(matchesPath).map((tab) => tab.id);
 
       for (const id of matchingIds) {
-        const tab = store.tabs.find((candidate) => candidate.id === id && candidate.filePath === path);
+        const tab = store.tabs.find((candidate) => candidate.id === id && matchesPath(candidate));
         if (!tab) continue;
 
         if (tab.content === diskContent) {
@@ -88,6 +101,24 @@ export function useFileWatch(store: EditorStore): void {
         }
 
         if (!tab.isDirty) {
+          store.loadTabFile(id, diskContent, path);
+          showToast(`${basename(path)} reloaded`);
+          continue;
+        }
+
+        // Our prompt is optional, and another modal (the close-window walk over
+        // dirty tabs, a conflict on a different file) can hold the screen for
+        // minutes. Wait for it, then re-read the tab: that flow may already
+        // have saved or reloaded this file, and a stale conflict prompt over an
+        // already-resolved conflict is pure noise.
+        await whenPromptsIdle();
+        const fresh = store.tabs.find((candidate) => candidate.id === id && matchesPath(candidate));
+        if (!fresh) continue;
+        if (fresh.content === diskContent) {
+          if (fresh.isDirty) store.setTabDirty(id, false);
+          continue;
+        }
+        if (!fresh.isDirty) {
           store.loadTabFile(id, diskContent, path);
           showToast(`${basename(path)} reloaded`);
           continue;

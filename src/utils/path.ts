@@ -19,6 +19,22 @@ export function normalizePath(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+$/, '');
 }
 
+/**
+ * True when two paths denote the same file, ignoring separator style and a
+ * trailing slash. Mirrors Rust's `normalize_path_for_compare`, so both sides
+ * agree on identity.
+ *
+ * Use this instead of `===` whenever the two strings can come from different
+ * sources: a folder rename rewrites open tabs to forward slashes
+ * (`replaceOpenDocumentPathPrefix`), while queued auto-saves and watcher
+ * bookkeeping still hold the spelling the path had when it was opened — on
+ * Windows those differ only by `\` vs `/`. Comparison stays case-sensitive
+ * (as on the Rust side); only separators are canonicalised.
+ */
+export function isSamePath(a: string, b: string): boolean {
+  return normalizePath(a) === normalizePath(b);
+}
+
 /** True when `path` equals `parent` or lives anywhere inside it. */
 export function isSameOrInside(path: string, parent: string): boolean {
   const normalizedPath = normalizePath(path);

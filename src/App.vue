@@ -110,9 +110,12 @@ function startSidebarResize(event: PointerEvent) {
   sidebarResizeStartWidth = settingsStore.sidebarWidth;
   sidebarResizePointerId = event.pointerId;
   document.body.classList.add('is-resizing-sidebar');
+  // Not `{ once: true }`: only one of pointerup/pointercancel ever fires, so
+  // the other would stay attached to `window` for the rest of the session —
+  // one leaked listener per resize. stopSidebarResize removes all three.
   window.addEventListener('pointermove', handleSidebarResize);
-  window.addEventListener('pointerup', stopSidebarResize, { once: true });
-  window.addEventListener('pointercancel', stopSidebarResize, { once: true });
+  window.addEventListener('pointerup', stopSidebarResize);
+  window.addEventListener('pointercancel', stopSidebarResize);
 }
 
 function handleSidebarResize(event: PointerEvent) {
@@ -125,7 +128,9 @@ function stopSidebarResize() {
   sidebarResizePointerId = null;
   document.body.classList.remove('is-resizing-sidebar');
   window.removeEventListener('pointermove', handleSidebarResize);
-} 
+  window.removeEventListener('pointerup', stopSidebarResize);
+  window.removeEventListener('pointercancel', stopSidebarResize);
+}
 
 // ── Rebuild native menu on inputs that affect its structure ──────────────────
 // Recent-files list, current tab count (Close vs Close Tab label), and the
@@ -309,6 +314,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  stopSidebarResize();
   cleanupTauriEventListeners([unlistenClose, unlistenDrop, unlistenFileOpen, unlistenFocus]);
 });
 </script>

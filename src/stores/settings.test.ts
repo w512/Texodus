@@ -5,6 +5,7 @@ import {
   SETTINGS_STORAGE_KEY,
   FONT_SIZE_MIN,
   FONT_SIZE_MAX,
+  SIDEBAR_MAX_WIDTH,
 } from './settings';
 
 beforeEach(() => {
@@ -126,5 +127,105 @@ describe('settings store', () => {
     const store = useSettingsStore();
     expect(store.documentMode).toBe('windows');
     expect(store.layoutMode).toBe('split');
+  });
+});
+
+// Stored values bypass the setters, so they get validated on the way in:
+// hand-edited storage, a payload from an older schema, or a truncated write
+// must not be able to put the store into an unusable state.
+describe('settings validation on load', () => {
+  it('clamps out-of-range numbers', () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
+      fontSize: 9999,
+      lineHeight: -3,
+      sidebarWidth: 10000,
+    }));
+    const store = useSettingsStore();
+    expect(store.fontSize).toBe(FONT_SIZE_MAX);
+    expect(store.lineHeight).toBe(1.2);
+    expect(store.sidebarWidth).toBe(SIDEBAR_MAX_WIDTH);
+  });
+
+  it('rounds numbers the way the setters do', () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
+      fontSize: 14.6,
+      lineHeight: 1.7000000000000002,
+    }));
+    const store = useSettingsStore();
+    expect(store.fontSize).toBe(15);
+    expect(store.lineHeight).toBe(1.7);
+  });
+
+  it('rejects values outside the allowed enums', () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
+      themeMode: 'sepia',
+      colorScheme: 'no-such-scheme',
+      // A bogus documentMode would travel to Rust via report_window_status
+      // and misroute OS "Open With" files.
+      documentMode: 'panes',
+    }));
+    localStorage.setItem('texodus.layoutMode.v1', JSON.stringify('zoomed'));
+    const store = useSettingsStore();
+    expect(store.themeMode).toBe('system');
+    expect(store.colorScheme).toBe('default');
+    expect(store.documentMode).toBe('windows');
+    expect(store.layoutMode).toBe('split');
+  });
+
+  it('rejects wrong types and keeps the defaults', () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
+      fontSize: '18',
+      lineHeight: null,
+      sidebarVisible: 'yes',
+      autoSave: 1,
+      editorFont: '   ',
+      searchHighlightColor: 'not-a-color',
+      recentFiles: 'nope',
+      lastWorkspacePath: 42,
+    }));
+    const store = useSettingsStore();
+    expect(store.fontSize).toBe(14);
+    expect(store.lineHeight).toBe(1.75);
+    expect(store.sidebarVisible).toBe(true);
+    expect(store.autoSave).toBe(false);
+    expect(store.editorFont).toContain('JetBrains Mono');
+    expect(store.searchHighlightColor).toBe('#ffd54a');
+    expect(store.recentFiles).toEqual([]);
+    expect(store.lastWorkspacePath).toBeNull();
+  });
+
+  it('normalises the stored highlight color and cleans the recent-files list', () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
+      searchHighlightColor: 'AABBCC',
+      recentFiles: ['/a.md', '', '/a.md', 7, '/b.md', ...Array.from({ length: 12 }, (_, i) => `/x${i}.md`)],
+    }));
+    const store = useSettingsStore();
+    expect(store.searchHighlightColor).toBe('#aabbcc');
+    expect(store.recentFiles).toHaveLength(10);
+    expect(store.recentFiles.slice(0, 3)).toEqual(['/a.md', '/b.md', '/x0.md']);
+  });
+
+  it('accepts a valid stored payload unchanged', () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
+      themeMode: 'dark',
+      colorScheme: 'nord',
+      fontSize: 16,
+      lineHeight: 1.5,
+      documentMode: 'tabs',
+      sidebarVisible: false,
+      sidebarWidth: 300,
+      autoSave: true,
+      lastWorkspacePath: '/work',
+    }));
+    const store = useSettingsStore();
+    expect(store.themeMode).toBe('dark');
+    expect(store.colorScheme).toBe('nord');
+    expect(store.fontSize).toBe(16);
+    expect(store.lineHeight).toBe(1.5);
+    expect(store.documentMode).toBe('tabs');
+    expect(store.sidebarVisible).toBe(false);
+    expect(store.sidebarWidth).toBe(300);
+    expect(store.autoSave).toBe(true);
+    expect(store.lastWorkspacePath).toBe('/work');
   });
 });

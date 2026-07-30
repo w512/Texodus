@@ -60,7 +60,7 @@ import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { useEditorStore, type Tab } from '../stores/editor';
 import { useSettingsStore } from '../stores/settings';
 import { promptUnsavedChanges } from '../composables/useUnsavedPrompt';
-import { saveFile, updateWindowTitle } from '../services/fileService';
+import { saveFile, showToast, updateWindowTitle } from '../services/fileService';
 import { basename } from '../utils/path';
 import { flushPendingSave } from '../composables/useAutoSave';
 
@@ -121,9 +121,17 @@ function prepareDrag(id: string, e: PointerEvent) {
   // Only start drag candidate on primary button.
   if (e.button !== 0) return;
   dragCandidate = { id, startX: e.clientX, startY: e.clientY };
+  // Not `{ once: true }`: whichever of pointerup/pointercancel doesn't fire
+  // would stay attached for the session. Both terminal handlers detach all three.
   window.addEventListener('pointermove', handleDragMove);
-  window.addEventListener('pointerup', handleDragEnd, { once: true });
-  window.addEventListener('pointercancel', cancelDrag, { once: true });
+  window.addEventListener('pointerup', handleDragEnd);
+  window.addEventListener('pointercancel', cancelDrag);
+}
+
+function detachDragListeners() {
+  window.removeEventListener('pointermove', handleDragMove);
+  window.removeEventListener('pointerup', handleDragEnd);
+  window.removeEventListener('pointercancel', cancelDrag);
 }
 
 function handleDragMove(e: PointerEvent) {
@@ -151,8 +159,7 @@ function handleDragMove(e: PointerEvent) {
 }
 
 function handleDragEnd() {
-  window.removeEventListener('pointermove', handleDragMove);
-  window.removeEventListener('pointercancel', cancelDrag);
+  detachDragListeners();
   const { id, beforeId } = dragState.value;
   endDrag();
   if (id && beforeId) {
@@ -170,7 +177,7 @@ function handleDragEnd() {
 }
 
 function cancelDrag() {
-  window.removeEventListener('pointermove', handleDragMove);
+  detachDragListeners();
   endDrag();
   dragCandidate = null;
 }
@@ -203,10 +210,15 @@ function closeContextMenu() {
   contextMenu.value.visible = false;
 }
 
-function onContextDuplicate() {
+async function onContextDuplicate() {
   const id = contextMenu.value.tabId;
   closeContextMenu();
+  const source = editorStore.tabs.find((t) => t.id === id);
   editorStore.duplicateTab(id);
+  await updateWindowTitle(editorStore);
+  // The copy is a detached draft, not a second view of the same file (see
+  // duplicateTab) — say so, otherwise the "Untitled" label looks like a bug.
+  if (source?.filePath) showToast('Duplicated as an unsaved copy');
 }
 
 async function onContextClose() {
@@ -257,7 +269,10 @@ async function onContextCloseRight() {
 }
 
 onMounted(() => document.addEventListener('click', closeContextMenu));
-onUnmounted(() => document.removeEventListener('click', closeContextMenu));
+onUnmounted(() => {
+  document.removeEventListener('click', closeContextMenu);
+  detachDragListeners();
+});
 </script>
 
 <style scoped>

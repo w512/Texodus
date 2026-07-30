@@ -17,6 +17,7 @@ import { writeTextFile } from '@tauri-apps/plugin-fs';
 import { useEditorStore } from '../stores/editor';
 import { useSettingsStore } from '../stores/settings';
 import { showToast } from '../utils/toast';
+import { isSamePath } from '../utils/path';
 import { markFileWritten } from '../utils/writeSuppression';
 
 type EditorStore = ReturnType<typeof useEditorStore>;
@@ -34,42 +35,56 @@ interface PendingSave {
 // slot) so a scheduled save for tab A is never clobbered when the user switches
 // to and edits tab B before A's debounce fires.
 const pending = new Map<string, PendingSave>();
-let isFlushing = false;
+
+// The flush currently in flight, if any. Callers join it instead of being told
+// "nothing to do" — see flushPendingSave.
+let currentFlush: Promise<boolean> | null = null;
 
 /** True when at least one file has a pending debounced auto-save. */
 export function hasPendingSave(): boolean {
   return pending.size > 0;
 }
 
-/**
- * Immediately save every pending debounced file. Returns true if at least one
- * save was performed.
- */
-export async function flushPendingSave(): Promise<boolean> {
-  if (isFlushing) return false;
-  if (pending.size === 0) return false;
-
-  isFlushing = true;
-  try {
+/** Drains `pending` until it stays empty, writing every entry. Loops because a
+ *  fresh edit can schedule a save while we're awaiting the previous write. */
+async function drainPending(): Promise<boolean> {
+  let saved = false;
+  while (pending.size > 0) {
     const entries = [...pending.entries()];
     pending.clear();
     for (const [, p] of entries) clearTimeout(p.timer);
-
-    let saved = false;
     for (const [path, p] of entries) {
       if (await doSave(path, p.content)) saved = true;
     }
-    return saved;
-  } finally {
-    isFlushing = false;
   }
+  return saved;
+}
+
+/**
+ * Immediately save every pending debounced file. Returns true if at least one
+ * save was performed.
+ *
+ * Callers `await` this *before* destructive actions (closing a window, closing
+ * or switching a tab, opening another document) and rely on the bytes being on
+ * disk once it resolves. So a concurrent call must join the running flush
+ * rather than return early: reporting `false` while a write was still in the
+ * air let the close path read a stale `isDirty` and skip the prompt.
+ */
+export function flushPendingSave(): Promise<boolean> {
+  if (!currentFlush) {
+    currentFlush = drainPending().finally(() => { currentFlush = null; });
+  }
+  return currentFlush;
 }
 
 async function doSave(path: string, content: string): Promise<boolean> {
   try {
     await writeTextFile(path, content);
     const store = useEditorStore();
-    const tab = store.tabs.find((t) => t.filePath === path);
+    // Normalised compare: `path` was captured when the save was scheduled, and
+    // a folder rename in between rewrites the tab's path to forward slashes —
+    // a `===` miss here would leave the tab dirty after a successful write.
+    const tab = store.tabs.find((t) => t.filePath && isSamePath(t.filePath, path));
     if (tab) store.setTabDirty(tab.id, false);
     markFileWritten(path, content);
     return true;
@@ -142,8 +157,8 @@ export function useAutoSave(store: EditorStore): void {
   onUnmounted(() => {
     void flushPendingSave();
     stopContentWatcher();
-    // Defensive: drop any timers flush didn't consume (e.g. if a flush was
-    // already in progress and bailed early).
+    // Defensive: drop any timers a scheduled-but-not-yet-drained save left
+    // behind, so a torn-down window can't fire a write later.
     for (const [, p] of pending) clearTimeout(p.timer);
     pending.clear();
   });

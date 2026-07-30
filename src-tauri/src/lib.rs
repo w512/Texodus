@@ -210,10 +210,18 @@ fn pick_target_window_label(windows: &[(String, bool)]) -> Option<String> {
     windows.first().map(|(l, _)| l.clone())
 }
 
-/// Pure helper: checks whether `path` is already queued in any window's
-/// pending-files list. Used for idempotency in `handle_incoming_file`.
-fn is_path_already_pending(path: &str, pending: &HashMap<String, Vec<String>>) -> bool {
-    pending.values().any(|q| q.contains(&path.to_string()))
+/// Pure helper: label of the window whose pending-files queue already holds
+/// `path`, if any. Used for idempotency in `handle_incoming_file` — and the
+/// label matters, because that window (not necessarily `main`) is the one that
+/// will load the file and therefore the one to focus.
+fn find_window_with_pending_path(
+    path: &str,
+    pending: &HashMap<String, Vec<String>>,
+) -> Option<String> {
+    pending
+        .iter()
+        .find(|(_, queue)| queue.iter().any(|queued| queued == path))
+        .map(|(label, _)| label.clone())
 }
 
 /// Forward slashes, no trailing separator — mirrors the frontend's
@@ -265,14 +273,19 @@ fn handle_incoming_file(app: &AppHandle, path: String) {
     // commonly: argv seeded `pending["main"]` at startup and now the single-
     // instance plugin is firing the callback for the same launch). Skip
     // spawning a duplicate — the existing handler will load the file when
-    // its frontend mounts.
-    let already_handled = state
+    // its frontend mounts. Focus the window that owns the queue entry: in
+    // windows mode the file may be queued for a freshly spawned `window_N`,
+    // and blindly focusing `main` would raise the wrong window.
+    let already_queued_in = state
         .pending_files
         .lock()
-        .map(|p| is_path_already_pending(&path, &p))
-        .unwrap_or(false);
-    if already_handled {
-        focus_window(app, "main");
+        .ok()
+        .and_then(|p| find_window_with_pending_path(&path, &p));
+    if let Some(label) = already_queued_in {
+        // The window may not exist yet (spawn in flight) — fall back to main.
+        if !focus_window(app, &label) {
+            focus_window(app, "main");
+        }
         return;
     }
 
@@ -811,34 +824,52 @@ mod tests {
         assert_eq!(find_window_with_path("/tmp/a.md", &statuses), None);
     }
 
-    // ── is_path_already_pending ─────────────────────────────────────────
+    // ── find_window_with_pending_path ───────────────────────────────────
 
     #[test]
     fn already_pending_detected() {
         let mut pending = HashMap::new();
         pending.insert("main".to_string(), vec!["/tmp/a.md".to_string(), "/tmp/b.md".to_string()]);
-        assert!(is_path_already_pending("/tmp/a.md", &pending));
-        assert!(is_path_already_pending("/tmp/b.md", &pending));
+        assert_eq!(
+            find_window_with_pending_path("/tmp/a.md", &pending),
+            Some("main".to_string())
+        );
+        assert_eq!(
+            find_window_with_pending_path("/tmp/b.md", &pending),
+            Some("main".to_string())
+        );
     }
 
     #[test]
     fn not_pending_when_absent() {
         let mut pending = HashMap::new();
         pending.insert("main".to_string(), vec!["/tmp/a.md".to_string()]);
-        assert!(!is_path_already_pending("/tmp/c.md", &pending));
+        assert_eq!(find_window_with_pending_path("/tmp/c.md", &pending), None);
     }
 
     #[test]
     fn not_pending_when_empty() {
         let pending = HashMap::new();
-        assert!(!is_path_already_pending("/tmp/any.md", &pending));
+        assert_eq!(find_window_with_pending_path("/tmp/any.md", &pending), None);
+        let mut empty_queue = HashMap::new();
+        empty_queue.insert("main".to_string(), Vec::new());
+        assert_eq!(find_window_with_pending_path("/tmp/any.md", &empty_queue), None);
     }
 
+    // The whole point of returning the label: the queue owner is the window
+    // that will load the file, and it isn't always `main`.
     #[test]
-    fn already_pending_checks_all_windows() {
+    fn already_pending_returns_the_owning_window() {
         let mut pending = HashMap::new();
         pending.insert("main".to_string(), vec!["/tmp/a.md".to_string()]);
         pending.insert("window_0".to_string(), vec!["/tmp/b.md".to_string()]);
-        assert!(is_path_already_pending("/tmp/b.md", &pending));
+        assert_eq!(
+            find_window_with_pending_path("/tmp/b.md", &pending),
+            Some("window_0".to_string())
+        );
+        assert_eq!(
+            find_window_with_pending_path("/tmp/a.md", &pending),
+            Some("main".to_string())
+        );
     }
 }

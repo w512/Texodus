@@ -106,16 +106,26 @@ export const useEditorStore = defineStore('editor', {
       this.activeTabId = tab.id;
       return tab.id;
     },
-    /** Creates a copy of the tab with the given id, inserts it after the
-     *  original, and activates the duplicate. */
+    /**
+     * Copies the tab's *text* into a new unsaved tab after the original and
+     * activates it.
+     *
+     * The copy deliberately does NOT inherit `filePath`: two tabs pointing at
+     * one file are duplicate buffers that silently diverge on edit — exactly
+     * what `requestOpenFromPath`'s tab dedup and Rust's `focus_window_with_path`
+     * exist to prevent — and both would race to overwrite each other on save.
+     * The duplicate is a draft of the same text; Save As gives it its own path.
+     */
     duplicateTab(id: string): string {
       const idx = this.tabs.findIndex((t) => t.id === id);
       if (idx < 0) return '';
       const source = this.tabs[idx];
       const copy = createTab({
         content: source.content,
-        filePath: source.filePath,
-        isDirty: source.isDirty,
+        filePath: null,
+        // Unsaved text that exists nowhere on disk — dirty, unless it's empty
+        // (a blank tab would otherwise trigger the unsaved-changes prompt).
+        isDirty: source.content !== '',
       });
       this.tabs.splice(idx + 1, 0, copy);
       this.activeTabId = copy.id;

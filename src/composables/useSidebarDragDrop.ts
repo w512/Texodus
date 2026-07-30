@@ -30,9 +30,17 @@ export function useSidebarDragDrop(options: SidebarDragDropOptions) {
   function prepareDrag(node: FileTreeNode, event: PointerEvent) {
     options.onDragStart?.();
     dragCandidate.value = { node, startX: event.clientX, startY: event.clientY };
+    // Not `{ once: true }`: only one of pointerup/pointercancel fires, so the
+    // other would linger on `window`. Both terminal handlers detach all three.
     window.addEventListener('pointermove', handlePointerDragMove);
-    window.addEventListener('pointerup', handlePointerDragEnd, { once: true });
-    window.addEventListener('pointercancel', cancelPointerDrag, { once: true });
+    window.addEventListener('pointerup', handlePointerDragEnd);
+    window.addEventListener('pointercancel', cancelPointerDrag);
+  }
+
+  function detachDragListeners() {
+    window.removeEventListener('pointermove', handlePointerDragMove);
+    window.removeEventListener('pointerup', handlePointerDragEnd);
+    window.removeEventListener('pointercancel', cancelPointerDrag);
   }
 
   function handlePointerDragMove(event: PointerEvent) {
@@ -51,8 +59,7 @@ export function useSidebarDragDrop(options: SidebarDragDropOptions) {
   }
 
   async function handlePointerDragEnd(event: PointerEvent) {
-    window.removeEventListener('pointermove', handlePointerDragMove);
-    window.removeEventListener('pointercancel', cancelPointerDrag);
+    detachDragListeners();
 
     const source = draggingNode.value;
     const targetPath = getDropTargetPathAt(event.clientX, event.clientY);
@@ -62,7 +69,7 @@ export function useSidebarDragDrop(options: SidebarDragDropOptions) {
   }
 
   function cancelPointerDrag() {
-    window.removeEventListener('pointermove', handlePointerDragMove);
+    detachDragListeners();
     endDrag();
   }
 
@@ -104,10 +111,7 @@ export function useSidebarDragDrop(options: SidebarDragDropOptions) {
     return true;
   }
 
-  onUnmounted(() => {
-    window.removeEventListener('pointermove', handlePointerDragMove);
-    window.removeEventListener('pointercancel', cancelPointerDrag);
-  });
+  onUnmounted(detachDragListeners);
 
   return { draggingNode, dropTargetPath, prepareDrag, consumeSuppressedClick };
 }

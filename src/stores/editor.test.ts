@@ -142,15 +142,34 @@ describe('editor store', () => {
       expect(store.activeTabId).toBe(dup);
     });
 
-    it('preserves content and filePath', () => {
+    // Inheriting filePath would create a second buffer of the same file: the
+    // two tabs diverge on edit and race to overwrite each other on save.
+    it('copies the content but not the file path, and marks the copy dirty', () => {
       const store = useEditorStore();
       store.loadFile('world', '/tmp/note.md');
       const a = store.activeTabId;
       store.duplicateTab(a);
       const dup = store.tabs[1];
       expect(dup.content).toBe('world');
-      expect(dup.filePath).toBe('/tmp/note.md');
-      expect(dup.isDirty).toBe(false);
+      expect(dup.filePath).toBeNull();
+      expect(dup.isDirty).toBe(true);
+      // The original is untouched.
+      expect(store.tabs[0].filePath).toBe('/tmp/note.md');
+      expect(store.tabs[0].isDirty).toBe(false);
+    });
+
+    it('never leaves two tabs pointing at one file', () => {
+      const store = useEditorStore();
+      store.loadFile('world', '/tmp/note.md');
+      store.duplicateTab(store.activeTabId);
+      const paths = store.tabs.map((t) => t.filePath).filter(Boolean);
+      expect(new Set(paths).size).toBe(paths.length);
+    });
+
+    it('keeps an empty duplicate clean', () => {
+      const store = useEditorStore();
+      const dup = store.duplicateTab(store.activeTabId);
+      expect(store.tabs.find((t) => t.id === dup)?.isDirty).toBe(false);
     });
 
     it('can duplicate a non-active tab', () => {

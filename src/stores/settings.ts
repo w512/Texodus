@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { type ColorSchemeId } from '../themes';
+import { COLOR_SCHEME_IDS, type ColorSchemeId } from '../themes';
 
 export type LayoutMode = 'split' | 'preview' | 'focus';
 export type ThemeMode = 'light' | 'dark' | 'system';
@@ -112,13 +112,92 @@ const DEFAULTS: PersistedSettings = {
 // that saturates the main thread and stalls rendering.
 let lastPersisted: string | null = null;
 
+// ── Validation of persisted values ────────────────────────────────────────────
+// The setters below clamp and normalise everything they accept, but what comes
+// back from localStorage bypassed them: it may predate a schema change, have
+// been edited by hand, or be truncated. An out-of-range `fontSize` or a bogus
+// `layoutMode` (which matches neither 'preview' nor 'focus', so EditorLayout
+// renders both panes with no divider) breaks the UI, and a bogus `documentMode`
+// travels to Rust via `report_window_status` and misroutes "Open With" files.
+// So every field is validated on the way in, falling back to its default.
+
+const THEME_MODES: readonly ThemeMode[] = ['light', 'dark', 'system'];
+const DOCUMENT_MODES: readonly DocumentMode[] = ['windows', 'tabs'];
+const LAYOUT_MODES: readonly LayoutMode[] = ['split', 'preview', 'focus'];
+
+function oneOf<T extends string>(allowed: readonly T[], value: unknown, fallback: T): T {
+  return typeof value === 'string' && (allowed as readonly string[]).includes(value)
+    ? (value as T)
+    : fallback;
+}
+
+function bool(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+/** Finite number clamped into [min, max] and rounded by `round`. */
+function clampedNumber(
+  value: unknown,
+  min: number,
+  max: number,
+  fallback: number,
+  round: (n: number) => number,
+): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, round(value)));
+}
+
+/** Non-empty string, else the fallback. Font stacks are free-form (system fonts
+ *  are discovered at runtime), so only emptiness is rejected. */
+function nonEmptyString(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() !== '' ? value : fallback;
+}
+
+function hexColor(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback;
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(value.trim());
+  return m ? `#${m[1].toLowerCase()}` : fallback;
+}
+
+function pathList(value: unknown, max: number): string[] {
+  if (!Array.isArray(value)) return [];
+  const paths = value.filter((p): p is string => typeof p === 'string' && p.trim() !== '');
+  return [...new Set(paths)].slice(0, max);
+}
+
+function sanitizePersisted(raw: unknown): PersistedSettings {
+  const p = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  return {
+    themeMode: oneOf(THEME_MODES, p.themeMode, DEFAULTS.themeMode),
+    colorScheme: oneOf(COLOR_SCHEME_IDS, p.colorScheme, DEFAULTS.colorScheme),
+    editorFont: nonEmptyString(p.editorFont, DEFAULTS.editorFont),
+    previewFont: nonEmptyString(p.previewFont, DEFAULTS.previewFont),
+    fontSize: clampedNumber(p.fontSize, FONT_SIZE_MIN, FONT_SIZE_MAX, DEFAULTS.fontSize, Math.round),
+    lineHeight: clampedNumber(
+      p.lineHeight, LINE_HEIGHT_MIN, LINE_HEIGHT_MAX, DEFAULTS.lineHeight,
+      (n) => Math.round(n * 100) / 100,
+    ),
+    recentFiles: pathList(p.recentFiles, RECENT_FILES_MAX),
+    documentMode: oneOf(DOCUMENT_MODES, p.documentMode, DEFAULTS.documentMode),
+    sidebarVisible: bool(p.sidebarVisible, DEFAULTS.sidebarVisible),
+    sidebarWidth: clampedNumber(
+      p.sidebarWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH, DEFAULTS.sidebarWidth, Math.round,
+    ),
+    lastWorkspacePath: typeof p.lastWorkspacePath === 'string' && p.lastWorkspacePath !== ''
+      ? p.lastWorkspacePath
+      : null,
+    smoothScrollSync: bool(p.smoothScrollSync, DEFAULTS.smoothScrollSync),
+    searchHighlightColor: hexColor(p.searchHighlightColor, DEFAULTS.searchHighlightColor),
+    autoSave: bool(p.autoSave, DEFAULTS.autoSave),
+  };
+}
+
 function loadPersisted(): PersistedSettings {
   if (typeof localStorage === 'undefined') return { ...DEFAULTS };
   try {
     const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
     if (!raw) return { ...DEFAULTS };
-    const parsed = JSON.parse(raw) as Partial<PersistedSettings>;
-    return { ...DEFAULTS, ...parsed };
+    return sanitizePersisted(JSON.parse(raw));
   } catch {
     return { ...DEFAULTS };
   }
@@ -128,12 +207,12 @@ function loadLayoutMode(): LayoutMode {
   if (typeof localStorage === 'undefined') return DEFAULT_LAYOUT_MODE;
   try {
     const raw = localStorage.getItem(LAYOUT_MODE_STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as LayoutMode;
+    if (raw) return oneOf(LAYOUT_MODES, JSON.parse(raw), DEFAULT_LAYOUT_MODE);
     // Backward-compat: read from the old shared settings key before the split.
     const legacy = localStorage.getItem(SETTINGS_STORAGE_KEY);
     if (legacy) {
-      const parsed = JSON.parse(legacy) as Partial<PersistedSettings & { layoutMode?: LayoutMode }>;
-      if (parsed.layoutMode) return parsed.layoutMode;
+      const parsed = JSON.parse(legacy) as { layoutMode?: unknown };
+      if (parsed?.layoutMode) return oneOf(LAYOUT_MODES, parsed.layoutMode, DEFAULT_LAYOUT_MODE);
     }
   } catch { /* ignore */ }
   return DEFAULT_LAYOUT_MODE;

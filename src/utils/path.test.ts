@@ -5,6 +5,7 @@ import {
   hasUrlScheme,
   isAbsolutePath,
   isSameOrInside,
+  isSamePath,
   normalizePath,
   resolveLocalPath,
 } from './path';
@@ -67,6 +68,26 @@ describe('normalizePath', () => {
   it('converts backslashes and strips trailing separators', () => {
     expect(normalizePath('a\\b\\c\\')).toBe('a/b/c');
     expect(normalizePath('/a/b///')).toBe('/a/b');
+  });
+});
+
+describe('isSamePath', () => {
+  it('ignores separator style', () => {
+    expect(isSamePath('C:\\Docs\\note.md', 'C:/Docs/note.md')).toBe(true);
+    expect(isSamePath('/tmp/a.md', '/tmp/a.md')).toBe(true);
+  });
+
+  it('ignores a trailing separator', () => {
+    expect(isSamePath('/tmp/dir/', '/tmp/dir')).toBe(true);
+  });
+
+  it('is false for different files', () => {
+    expect(isSamePath('/tmp/a.md', '/tmp/b.md')).toBe(false);
+    expect(isSamePath('/tmp/a.md', '/tmp/sub/a.md')).toBe(false);
+  });
+
+  it('stays case-sensitive, matching the Rust side', () => {
+    expect(isSamePath('/tmp/A.md', '/tmp/a.md')).toBe(false);
   });
 });
 
