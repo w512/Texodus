@@ -62,7 +62,7 @@ export async function renderMermaidSvg(
   return sanitizeMermaidSvg(svg);
 }
 
-function sanitizeMermaidSvg(svg: string): string {
+export function sanitizeMermaidSvg(svg: string): string {
   return DOMPurify.sanitize(svg, {
     USE_PROFILES: { svg: true, svgFilters: true },
     // Mermaid output is inserted with innerHTML. Keep the generated SVG-only

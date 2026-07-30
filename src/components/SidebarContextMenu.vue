@@ -1,23 +1,21 @@
 <template>
-  <div
-    class="sidebar-context-menu"
-    :style="{ left: `${x}px`, top: `${y}px` }"
-    @click.stop
-  >
-    <button v-if="isFile" type="button" @click="emit('action', 'open-in-new-window')">Open in New Window</button>
-    <div v-if="isFile" class="sidebar-context-menu__separator"></div>
-    <button type="button" @click="emit('action', 'new-file')">New File</button>
-    <button type="button" @click="emit('action', 'new-folder')">New Folder</button>
-    <div v-if="!isRoot" class="sidebar-context-menu__separator"></div>
-    <button v-if="!isRoot" type="button" @click="emit('action', 'rename')">Rename</button>
-    <button v-if="!isRoot" type="button" class="sidebar-context-menu__danger" @click="emit('action', 'delete')">Delete</button>
-    <div class="sidebar-context-menu__separator"></div>
-    <button type="button" @click="emit('action', 'reveal')">Reveal in Finder/Explorer</button>
-    <button type="button" @click="emit('action', 'copy-relative-path')">Copy Relative Path</button>
-  </div>
+  <ContextMenu class="sidebar-context-menu" :x="x" :y="y" @close="emit('close')">
+    <button v-if="isFile" role="menuitem" type="button" @click="emit('action', 'open-in-new-window')">Open in New Window</button>
+    <div v-if="isFile" class="sidebar-context-menu__separator" role="separator"></div>
+    <button role="menuitem" type="button" @click="emit('action', 'new-file')">New File</button>
+    <button role="menuitem" type="button" @click="emit('action', 'new-folder')">New Folder</button>
+    <div v-if="!isRoot" class="sidebar-context-menu__separator" role="separator"></div>
+    <button v-if="!isRoot" role="menuitem" type="button" @click="emit('action', 'rename')">Rename</button>
+    <button v-if="!isRoot" role="menuitem" type="button" class="sidebar-context-menu__danger" @click="emit('action', 'delete')">Delete</button>
+    <div class="sidebar-context-menu__separator" role="separator"></div>
+    <button role="menuitem" type="button" @click="emit('action', 'reveal')">Reveal in Finder/Explorer</button>
+    <button role="menuitem" type="button" @click="emit('action', 'copy-relative-path')">Copy Relative Path</button>
+  </ContextMenu>
 </template>
 
 <script setup lang="ts">
+import ContextMenu from './ContextMenu.vue';
+
 export type SidebarContextAction =
   | 'open-in-new-window'
   | 'new-file'
@@ -38,20 +36,13 @@ defineProps<{
 
 const emit = defineEmits<{
   (e: 'action', action: SidebarContextAction): void;
+  (e: 'close'): void;
 }>();
 </script>
 
 <style scoped>
 .sidebar-context-menu {
-  position: fixed;
-  z-index: 1000;
   min-width: 190px;
-  padding: 0.3rem;
-  border: 1px solid var(--border-color);
-  border-radius: 9px;
-  background: var(--bg-color);
-  color: var(--text-color);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
 }
 
 .sidebar-context-menu button {
@@ -68,8 +59,11 @@ const emit = defineEmits<{
   cursor: pointer;
 }
 
-.sidebar-context-menu button:hover {
+.sidebar-context-menu button:hover,
+.sidebar-context-menu button:focus-visible {
+  outline: none;
   background: var(--btn-hover);
+  color: var(--accent-color);
 }
 
 .sidebar-context-menu__danger {

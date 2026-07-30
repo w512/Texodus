@@ -4,8 +4,8 @@ import { type FileTreeNode, useWorkspaceStore } from '../stores/workspace';
 import { useSettingsStore } from '../stores/settings';
 import { findNode } from '../utils/workspaceTree';
 import { dirname, normalizePath, resolveLocalPath } from '../utils/path';
+import { isSupportedDocument } from '../utils/documentExtensions';
 
-const VISIBLE_FILE_EXTENSIONS = /\.(md|markdown|txt)$/i;
 const IGNORED_DIRECTORIES = new Set(['.git', '.obsidian', 'node_modules', 'dist', 'target']);
 
 export async function selectWorkspaceFolder(): Promise<string | null> {
@@ -189,7 +189,7 @@ async function readDirectoryNodes(directoryPath: string): Promise<FileTreeNode[]
       continue;
     }
 
-    if (entry.isFile && VISIBLE_FILE_EXTENSIONS.test(entry.name)) {
+    if (entry.isFile && isSupportedDocument(entry.name)) {
       nodes.push({ name: entry.name, path, kind: 'file' });
     }
   }

@@ -21,7 +21,7 @@ export interface QuickOpenFile {
 }
 
 /** Recursively collect all file nodes from the workspace tree. */
-function collectFiles(nodes: FileTreeNode[]): FileTreeNode[] {
+export function collectFiles(nodes: FileTreeNode[]): FileTreeNode[] {
   const files: FileTreeNode[] = [];
   for (const node of nodes) {
     if (node.kind === 'file') {
@@ -52,7 +52,7 @@ const scannedFiles = ref<QuickOpenFile[] | null>(null);
 let scannedRoot: string | null = null;
 let scanToken = 0;
 
-function toQuickOpenFiles(nodes: FileTreeNode[]): QuickOpenFile[] {
+export function toQuickOpenFiles(nodes: FileTreeNode[]): QuickOpenFile[] {
   return nodes
     .map((node) => ({ path: node.path, name: node.name, displayTitle: node.name }))
     .sort((a, b) => a.name.localeCompare(b.name));

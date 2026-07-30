@@ -1,5 +1,10 @@
+import { readFileSync } from "node:fs";
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
+
+const { version: appVersion } = JSON.parse(
+  readFileSync(new URL("./package.json", import.meta.url), "utf8")
+);
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -26,6 +31,9 @@ function dropLegacyWoff() {
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [vue(), dropLegacyWoff()],
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

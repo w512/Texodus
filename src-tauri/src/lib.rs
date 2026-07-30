@@ -49,9 +49,17 @@ fn next_window_label() -> String {
     format!("window_{}", n)
 }
 
+const SUPPORTED_DOCUMENT_EXTENSIONS: &[&str] = &["md", "markdown", "txt"];
+
 fn is_supported_path(path: &str) -> bool {
-    let lower = path.to_lowercase();
-    lower.ends_with(".md") || lower.ends_with(".markdown") || lower.ends_with(".txt")
+    Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            SUPPORTED_DOCUMENT_EXTENSIONS
+                .iter()
+                .any(|supported| extension.eq_ignore_ascii_case(supported))
+        })
 }
 
 /// Grants runtime fs + asset-protocol scope for `path` and its parent
@@ -373,7 +381,8 @@ fn report_window_status(
 }
 
 const DIALOG_FILTER_NAME: &str = "Markdown";
-const OPEN_EXTENSIONS: &[&str] = &["md", "markdown", "txt"];
+// Save As intentionally defaults to Markdown, while existing .txt documents
+// remain directly saveable. This is not the list of supported documents.
 const SAVE_EXTENSIONS: &[&str] = &["md", "markdown"];
 
 /// Native "Open…" dialog run on the Rust side. Unlike the JS dialog plugin
@@ -390,7 +399,7 @@ async fn pick_document(app: AppHandle, start_in: Option<String>) -> Option<Strin
     let mut dialog = app
         .dialog()
         .file()
-        .add_filter(DIALOG_FILTER_NAME, OPEN_EXTENSIONS);
+        .add_filter(DIALOG_FILTER_NAME, SUPPORTED_DOCUMENT_EXTENSIONS);
     if let Some(start) = start_in {
         let start = PathBuf::from(start);
         if let Some(dir) = start.parent().filter(|d| !d.as_os_str().is_empty()) {
@@ -612,7 +621,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn supported_paths_match_markdown_extensions_case_insensitively() {
+    fn supported_document_paths_match_extensions_case_insensitively() {
         assert!(is_supported_path("/tmp/notes.md"));
         assert!(is_supported_path("/tmp/notes.MD"));
         assert!(is_supported_path("C:\\Docs\\Read Me.Markdown"));

@@ -69,6 +69,7 @@ import {
   showToast,
   requestOpenFromPath,
 } from './services/fileService';
+import { isSupportedDocument } from './utils/documentExtensions';
 import { basename, normalizePath, resolveLocalPath } from './utils/path';
 import { confirmReplaceExisting } from './services/workspaceFileOperations';
 import { applyFormat } from './composables/useFormatting';
@@ -270,7 +271,7 @@ onMounted(async () => {
         && cssX <= sidebarEl.getBoundingClientRect().right;
 
       if (onSidebar && workspaceStore.rootPath) {
-        const supported = paths.filter((p) => /\.(md|markdown|txt)$/i.test(p));
+        const supported = paths.filter(isSupportedDocument);
         let copied = 0;
         for (const p of supported) {
           const dest = resolveLocalPath(workspaceStore.rootPath, basename(p));
@@ -293,7 +294,7 @@ onMounted(async () => {
         return;
       }
 
-      const target = paths.find((p) => /\.(md|markdown|txt)$/i.test(p));
+      const target = paths.find(isSupportedDocument);
       if (!target) return;
       await requestOpenFromPath(editorStore, target);
     });

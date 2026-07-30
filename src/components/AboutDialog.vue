@@ -47,7 +47,6 @@
 
 <script setup lang="ts">
 import { ref } from 'vue';
-import packageJson from '../../package.json';
 // The repo's LICENSE.txt is the single source of truth; ?raw inlines it at
 // build time so the dialog can't drift from the actual license.
 import licenseText from '../../LICENSE.txt?raw';
@@ -55,11 +54,9 @@ import { useSettingsStore } from '../stores/settings';
 
 const settingsStore = useSettingsStore();
 const activeTab = ref<'info' | 'license'>('info');
-// package.json is the single source of truth for the version (the bump script
-// updates it, and tauri.conf.json reads it from there). Read it directly rather
-// than via getVersion(), which returns the version compiled into the Rust
-// binary and would show stale until a recompile after each bump.
-const appVersion = packageJson.version;
+// package.json remains the single source of truth: Vite injects only its
+// version string, so dependency metadata is not bundled with this dialog.
+const appVersion = __APP_VERSION__;
 
 const close = () => {
   settingsStore.setAboutVisible(false);

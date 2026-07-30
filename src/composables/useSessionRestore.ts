@@ -25,6 +25,30 @@ interface SavedSession {
   activeFilePath: string | null;
 }
 
+export function parseSavedSession(raw: string): SavedSession | null {
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== 'object') return null;
+    const candidate = value as { tabs?: unknown; activeFilePath?: unknown };
+    if (!Array.isArray(candidate.tabs)) return null;
+
+    const tabs = candidate.tabs
+      .filter((tab): tab is SavedTab => Boolean(
+        tab
+        && typeof tab === 'object'
+        && typeof (tab as { filePath?: unknown }).filePath === 'string'
+        && (tab as { filePath: string }).filePath,
+      ))
+      .map((tab) => ({ filePath: tab.filePath }));
+    const activeFilePath = typeof candidate.activeFilePath === 'string'
+      ? candidate.activeFilePath
+      : null;
+    return { tabs, activeFilePath };
+  } catch {
+    return null;
+  }
+}
+
 function canUseTabSession(): boolean {
   try {
     return getCurrentWindow().label === 'main' && useSettingsStore().documentMode === 'tabs';
@@ -53,16 +77,10 @@ export function saveSession(store: EditorStore): void {
 export async function restoreSession(store: EditorStore): Promise<void> {
   if (!canUseTabSession()) return;
 
-  let session: SavedSession;
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) return;
-    session = JSON.parse(raw);
-  } catch {
-    return;
-  }
-
-  if (!session.tabs || session.tabs.length === 0) return;
+  const raw = localStorage.getItem(SESSION_KEY);
+  if (!raw) return;
+  const session = parseSavedSession(raw);
+  if (!session || session.tabs.length === 0) return;
 
   // Load each saved file into a tab. The first file that actually loads
   // replaces the initial blank tab — keyed on success, not on index, so a

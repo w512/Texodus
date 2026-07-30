@@ -21,6 +21,10 @@ interface SidebarDragDropOptions {
   onDrop: (source: FileTreeNode, targetDirectoryPath: string) => Promise<void> | void;
 }
 
+export function canDropSidebarNode(sourcePath: string, targetDirectoryPath: string): boolean {
+  return sourcePath !== targetDirectoryPath && !isSameOrInside(targetDirectoryPath, sourcePath);
+}
+
 export function useSidebarDragDrop(options: SidebarDragDropOptions) {
   const draggingNode = ref<FileTreeNode | null>(null);
   const dropTargetPath = ref<string | null>(null);
@@ -85,16 +89,12 @@ export function useSidebarDragDrop(options: SidebarDragDropOptions) {
     if (button) {
       const path = button.dataset.sidebarPath;
       const kind = button.dataset.sidebarKind;
-      if (path && kind === 'directory' && canDrop(source.path, path)) return path;
+      if (path && kind === 'directory' && canDropSidebarNode(source.path, path)) return path;
       return null;
     }
 
-    if (options.bodyRef.value?.contains(element) && canDrop(source.path, rootPath)) return rootPath;
+    if (options.bodyRef.value?.contains(element) && canDropSidebarNode(source.path, rootPath)) return rootPath;
     return null;
-  }
-
-  function canDrop(sourcePath: string, targetDirectoryPath: string): boolean {
-    return sourcePath !== targetDirectoryPath && !isSameOrInside(targetDirectoryPath, sourcePath);
   }
 
   function endDrag() {

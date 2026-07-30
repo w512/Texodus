@@ -6,6 +6,8 @@ import {
   FONT_SIZE_MIN,
   FONT_SIZE_MAX,
   SIDEBAR_MAX_WIDTH,
+  SPLIT_RATIO_MIN,
+  SPLIT_RATIO_MAX,
 } from './settings';
 
 beforeEach(() => {
@@ -57,6 +59,17 @@ describe('settings store', () => {
     expect(store.recentFiles.filter((p) => p === '/f/5.md')).toHaveLength(1);
   });
 
+  it('removes a set of stale recent files without reordering survivors', () => {
+    const store = useSettingsStore();
+    store.addRecentFile('/c.md');
+    store.addRecentFile('/b.md');
+    store.addRecentFile('/a.md');
+
+    store.removeRecentFiles(new Set(['/b.md', '/missing.md']));
+
+    expect(store.recentFiles).toEqual(['/a.md', '/c.md']);
+  });
+
   it('cycleTheme walks system -> light -> dark -> system', () => {
     const store = useSettingsStore();
     expect(store.themeMode).toBe('system');
@@ -66,6 +79,34 @@ describe('settings store', () => {
     expect(store.themeMode).toBe('dark');
     store.cycleTheme();
     expect(store.themeMode).toBe('system');
+  });
+
+  it('clamps and separately persists the per-window split ratio', () => {
+    const store = useSettingsStore();
+    store.setSplitRatio(0.72);
+    store.persistSplitRatio();
+    expect(store.splitRatio).toBe(0.72);
+    expect(JSON.parse(localStorage.getItem('texodus.splitRatio.v1')!)).toBe(0.72);
+
+    store.setSplitRatio(0);
+    expect(store.splitRatio).toBe(SPLIT_RATIO_MIN);
+    store.setSplitRatio(1);
+    expect(store.splitRatio).toBe(SPLIT_RATIO_MAX);
+    store.setSplitRatio(Number.NaN);
+    expect(store.splitRatio).toBe(SPLIT_RATIO_MAX);
+  });
+
+  it('restores a valid split ratio and sanitizes corrupt values', () => {
+    localStorage.setItem('texodus.splitRatio.v1', JSON.stringify(0.68));
+    expect(useSettingsStore().splitRatio).toBe(0.68);
+
+    setActivePinia(createPinia());
+    localStorage.setItem('texodus.splitRatio.v1', JSON.stringify(9));
+    expect(useSettingsStore().splitRatio).toBe(SPLIT_RATIO_MAX);
+
+    setActivePinia(createPinia());
+    localStorage.setItem('texodus.splitRatio.v1', 'not json');
+    expect(useSettingsStore().splitRatio).toBe(0.5);
   });
 
   it('persist writes only persisted fields to localStorage', () => {
@@ -81,6 +122,7 @@ describe('settings store', () => {
     expect(saved).not.toHaveProperty('systemFonts');
     // layoutMode is per-window and must NOT be in the shared settings payload.
     expect(saved).not.toHaveProperty('layoutMode');
+    expect(saved).not.toHaveProperty('splitRatio');
   });
 
   it('reloadFromStorage picks up changes another window persisted', () => {

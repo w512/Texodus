@@ -34,24 +34,30 @@
       aria-label="New Tab"
       @click="onNewTab"
     >+</button>
-    <div
+    <ContextMenu
       v-if="contextMenu.visible"
       class="tab-context-menu"
-      :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      @close="closeContextMenu"
     >
-      <div class="tab-context-item" @click="onContextDuplicate">Duplicate Tab</div>
-      <div class="tab-context-item" @click="onContextClose">Close</div>
-      <div
+      <button role="menuitem" type="button" class="tab-context-item" @click="onContextDuplicate">Duplicate Tab</button>
+      <button role="menuitem" type="button" class="tab-context-item" @click="onContextClose">Close</button>
+      <button
         v-if="editorStore.tabCount > 1"
+        role="menuitem"
+        type="button"
         class="tab-context-item"
         @click="onContextCloseOthers"
-      >Close Other Tabs</div>
-      <div
+      >Close Other Tabs</button>
+      <button
         v-if="hasTabsToRight"
+        role="menuitem"
+        type="button"
         class="tab-context-item"
         @click="onContextCloseRight"
-      >Close Tabs to the Right</div>
-    </div>
+      >Close Tabs to the Right</button>
+    </ContextMenu>
   </div>
 </template>
 
@@ -63,6 +69,7 @@ import { promptUnsavedChanges } from '../composables/useUnsavedPrompt';
 import { saveFile, showToast, updateWindowTitle } from '../services/fileService';
 import { basename } from '../utils/path';
 import { flushPendingSave } from '../composables/useAutoSave';
+import ContextMenu from './ContextMenu.vue';
 
 const editorStore = useEditorStore();
 const settingsStore = useSettingsStore();
@@ -396,25 +403,27 @@ onUnmounted(() => {
 /* ── Context menu ─────────────────────────────────────────────────────── */
 
 .tab-context-menu {
-  position: fixed;
-  z-index: 3000;
-  background: var(--bg-color);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-  padding: 4px 0;
   min-width: 180px;
+  padding: 4px 0;
 }
 
 .tab-context-item {
+  display: block;
+  width: 100%;
   padding: 7px 16px;
+  border: 0;
+  background: transparent;
   cursor: pointer;
+  font: inherit;
   font-size: 0.8125rem;
+  text-align: left;
   color: var(--text-color);
   transition: background 0.1s;
 }
 
-.tab-context-item:hover {
+.tab-context-item:hover,
+.tab-context-item:focus-visible {
+  outline: none;
   background: var(--btn-hover);
   color: var(--accent-color);
 }

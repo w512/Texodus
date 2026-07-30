@@ -2,10 +2,8 @@
  * Link validation utilities for the Markdown preview.
  */
 
+import { isSupportedDocument } from './documentExtensions';
 import { hasUrlScheme, isAbsolutePath, resolveLocalPath } from './path';
-
-/** Extensions the app opens as in-app documents rather than handing to the OS. */
-const MARKDOWN_LINK_RE = /\.(md|markdown|txt)$/i;
 
 /**
  * Returns true when `href` is a safe external link that the preview may open
@@ -56,5 +54,5 @@ export function resolveLinkTarget(href: string, baseDir: string): LinkTarget {
   if (!isAbsolutePath(relative) && !baseDir) return { kind: 'needs-base' };
 
   const path = resolveLocalPath(baseDir, relative);
-  return MARKDOWN_LINK_RE.test(path) ? { kind: 'document', path } : { kind: 'os-file', path };
+  return isSupportedDocument(path) ? { kind: 'document', path } : { kind: 'os-file', path };
 }

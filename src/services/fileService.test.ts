@@ -224,6 +224,19 @@ describe('requestOpenFromPath (scope-denied recovery)', () => {
     expect(confirm).not.toHaveBeenCalled();
     expect(message).toHaveBeenCalled();
   });
+
+  it('removes a missing file from recents after an open failure', async () => {
+    const store = useEditorStore();
+    const settings = useSettingsStore();
+    settings.setDocumentMode('tabs');
+    settings.addRecentFile('/tmp/gone.md');
+    mockedReadTextFile.mockRejectedValueOnce(new Error('ENOENT: no such file or directory'));
+
+    await requestOpenFromPath(store, '/tmp/gone.md');
+
+    expect(settings.recentFiles).not.toContain('/tmp/gone.md');
+    expect(message).toHaveBeenCalled();
+  });
 });
 
 describe('requestOpenDocument (windows mode)', () => {

@@ -56,7 +56,7 @@ let expectedPreviewTop: number | null = null;
 let rafId: number | null = null;
 let pendingSource: 'editor' | 'preview' | null = null;
 
-interface Anchor {
+export interface ScrollAnchor {
   line: number;
   top: number;
 }
@@ -64,12 +64,12 @@ interface Anchor {
 // Cached bracketed preview anchors, keyed by a cheap layout fingerprint. The
 // key reads are O(1) while layout is clean (during scroll); they only differ
 // — forcing a recompute — when the preview's content or box actually changes.
-let cachedAnchors: Anchor[] | null = null;
+let cachedAnchors: ScrollAnchor[] | null = null;
 let cacheKey = '';
 
 /** Reads `data-source-line` attributes off the preview's top-level blocks. */
-function realAnchors(container: HTMLElement): Anchor[] {
-  const out: Anchor[] = [];
+function realAnchors(container: HTMLElement): ScrollAnchor[] {
+  const out: ScrollAnchor[] = [];
   for (const el of Array.from(
     container.querySelectorAll<HTMLElement>(':scope > [data-source-line]'),
   )) {
@@ -83,12 +83,12 @@ function realAnchors(container: HTMLElement): Anchor[] {
  *  prepended/appended. Guarantees the interpolation never extrapolates past
  *  the actual scrollable range — which would let the browser clamp the assignment
  *  and break the round-trip. */
-function bracketedAnchors(container: HTMLElement, totalLines: number): Anchor[] {
+export function bracketedAnchors(container: HTMLElement, totalLines: number): ScrollAnchor[] {
   const real = realAnchors(container);
   const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
   const endLine = Math.max(1, totalLines);
 
-  const out: Anchor[] = [];
+  const out: ScrollAnchor[] = [];
   if (real.length === 0 || real[0].line > 0) out.push({ line: 0, top: 0 });
   out.push(...real);
   const last = out[out.length - 1];
@@ -98,7 +98,7 @@ function bracketedAnchors(container: HTMLElement, totalLines: number): Anchor[] 
 
 /** Bracketed preview anchors, recomputed only when the layout fingerprint
  *  changes. Returns null when there aren't enough anchors to interpolate. */
-function getAnchors(): Anchor[] | null {
+function getAnchors(): ScrollAnchor[] | null {
   if (!previewEl || !editorView) return null;
   const lines = editorView.state.doc.lines;
   const key = `${previewEl.scrollHeight}:${previewEl.clientHeight}:${lines}`;
@@ -133,7 +133,12 @@ function editorLineToScroll(view: EditorView, line: number): number {
   return block.top + fracPart * block.height;
 }
 
-function interpolate(anchors: Anchor[], key: 'line' | 'top', value: number, out: 'top' | 'line'): number {
+export function interpolateAnchors(
+  anchors: ScrollAnchor[],
+  key: 'line' | 'top',
+  value: number,
+  out: 'top' | 'line',
+): number {
   // Linear search — anchor lists are short (top-level blocks only), so this
   // is fine. Returns the interpolated `out` value for the given `key=value`.
   for (let i = 0; i < anchors.length - 1; i++) {
@@ -163,9 +168,9 @@ function computeTarget(source: 'editor' | 'preview'): number | null {
   if (!anchors) return null;
   if (source === 'editor') {
     const line = editorTopLine(editorView);
-    return interpolate(anchors, 'line', line, 'top');
+    return interpolateAnchors(anchors, 'line', line, 'top');
   }
-  const line = interpolate(anchors, 'top', previewEl.scrollTop, 'line');
+  const line = interpolateAnchors(anchors, 'top', previewEl.scrollTop, 'line');
   return editorLineToScroll(editorView, line);
 }
 

@@ -55,9 +55,14 @@ const RECENT_FILES_MAX = 10;
 export const SIDEBAR_MIN_WIDTH = 220;
 export const SIDEBAR_MAX_WIDTH = 420;
 
+export const SPLIT_RATIO_MIN = 0.15;
+export const SPLIT_RATIO_MAX = 0.85;
+const DEFAULT_SPLIT_RATIO = 0.5;
+
 /** Separate localStorage key for the default layout mode of new windows.
  *  Not synced via the `storage` event — each open window keeps its own mode. */
 const LAYOUT_MODE_STORAGE_KEY = 'texodus.layoutMode.v1';
+const SPLIT_RATIO_STORAGE_KEY = 'texodus.splitRatio.v1';
 const DEFAULT_LAYOUT_MODE: LayoutMode = 'split';
 
 interface PersistedSettings {
@@ -78,8 +83,9 @@ interface PersistedSettings {
 }
 
 interface SettingsState extends PersistedSettings {
-  /** Per-window layout mode — not synced across open windows. */
+  /** Per-window pane layout — not synced across open windows. */
   layoutMode: LayoutMode;
+  splitRatio: number;
   settingsVisible: boolean;
   aboutVisible: boolean;
   systemFonts: string[];
@@ -218,10 +224,26 @@ function loadLayoutMode(): LayoutMode {
   return DEFAULT_LAYOUT_MODE;
 }
 
+function loadSplitRatio(): number {
+  if (typeof localStorage === 'undefined') return DEFAULT_SPLIT_RATIO;
+  try {
+    const raw = localStorage.getItem(SPLIT_RATIO_STORAGE_KEY);
+    return raw
+      ? clampedNumber(
+          JSON.parse(raw), SPLIT_RATIO_MIN, SPLIT_RATIO_MAX, DEFAULT_SPLIT_RATIO,
+          (n) => Math.round(n * 10000) / 10000,
+        )
+      : DEFAULT_SPLIT_RATIO;
+  } catch {
+    return DEFAULT_SPLIT_RATIO;
+  }
+}
+
 function loadFromStorage(): SettingsState {
   return {
     ...loadPersisted(),
     layoutMode: loadLayoutMode(),
+    splitRatio: loadSplitRatio(),
     settingsVisible: false,
     aboutVisible: false,
     systemFonts: [],
@@ -237,6 +259,14 @@ export const useSettingsStore = defineStore('settings', {
       // Persist separately so new windows inherit the last-used mode,
       // without syncing to already-open windows.
       try { localStorage.setItem(LAYOUT_MODE_STORAGE_KEY, JSON.stringify(mode)); }
+      catch { /* quota */ }
+    },
+    setSplitRatio(ratio: number) {
+      if (!Number.isFinite(ratio)) return;
+      this.splitRatio = Math.max(SPLIT_RATIO_MIN, Math.min(SPLIT_RATIO_MAX, ratio));
+    },
+    persistSplitRatio() {
+      try { localStorage.setItem(SPLIT_RATIO_STORAGE_KEY, JSON.stringify(this.splitRatio)); }
       catch { /* quota */ }
     },
     setThemeMode(mode: ThemeMode) { this.themeMode = mode; },
@@ -282,6 +312,9 @@ export const useSettingsStore = defineStore('settings', {
         ...this.recentFiles.filter(p => p !== path),
       ].slice(0, RECENT_FILES_MAX);
     },
+    removeRecentFiles(paths: ReadonlySet<string>) {
+      this.recentFiles = this.recentFiles.filter((path) => !paths.has(path));
+    },
     clearRecentFiles() {
       this.recentFiles = [];
     },
@@ -308,6 +341,7 @@ export const useSettingsStore = defineStore('settings', {
         systemFonts: _sf,
         systemFontsLoaded: _sfl,
         layoutMode: _lm,
+        splitRatio: _sr,
         ...toSave
       } = this.$state;
       const serialized = JSON.stringify(toSave);

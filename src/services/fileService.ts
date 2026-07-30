@@ -10,6 +10,7 @@ import { basename, normalizePath } from '../utils/path';
 import { showToast } from '../utils/toast';
 import { markFileWritten } from '../utils/writeSuppression';
 import { flushPendingSave } from '../composables/useAutoSave';
+import { isMissingFileError } from './recentFilesService';
 
 export { showToast };
 
@@ -63,6 +64,9 @@ async function showOpenError(store: EditorStore, path: string, err: unknown): Pr
   if (isScopeDenied(err)) {
     await recoverScopeDeniedOpen(store, path);
     return;
+  }
+  if (isMissingFileError(err)) {
+    useSettingsStore().removeRecentFiles(new Set([path]));
   }
   await showError('Failed to open file', err);
 }

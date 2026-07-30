@@ -78,6 +78,7 @@
       :is-root="contextMenu.isRoot"
       :is-file="contextMenu.node.kind === 'file'"
       @action="runContextAction"
+      @close="closeContextMenu"
     />
 
     <SidebarNamePrompt
@@ -158,12 +159,10 @@ watch(
 
 onMounted(() => {
   window.addEventListener('click', closeContextMenu);
-  window.addEventListener('keydown', handleContextMenuKeydown);
 });
 
 onUnmounted(() => {
   window.removeEventListener('click', closeContextMenu);
-  window.removeEventListener('keydown', handleContextMenuKeydown);
 });
 
 async function openFolder() {
@@ -194,9 +193,8 @@ function openNodeContextMenu(node: FileTreeNode, event: MouseEvent) {
   contextMenu.visible = true;
   contextMenu.node = node;
   contextMenu.isRoot = false;
-  const position = getContextMenuPosition(event);
-  contextMenu.x = position.x;
-  contextMenu.y = position.y;
+  contextMenu.x = event.clientX;
+  contextMenu.y = event.clientY;
 }
 
 function openRootContextMenu(event: MouseEvent) {
@@ -209,30 +207,12 @@ function openRootContextMenu(event: MouseEvent) {
     kind: 'directory',
     children: workspaceStore.tree,
   };
-  const position = getContextMenuPosition(event);
-  contextMenu.x = position.x;
-  contextMenu.y = position.y;
-}
-
-function getContextMenuPosition(event: MouseEvent): { x: number; y: number } {
-  const menuWidth = 210;
-  const menuHeight = contextMenu.isRoot ? 150 : contextMenu.node?.kind === 'file' ? 290 : 250;
-  const padding = 8;
-  const x = Math.min(event.clientX, window.innerWidth - menuWidth - padding);
-  const opensUpward = event.clientY + menuHeight + padding > window.innerHeight;
-  const y = opensUpward
-    ? Math.max(padding, event.clientY - menuHeight)
-    : event.clientY;
-
-  return { x, y };
+  contextMenu.x = event.clientX;
+  contextMenu.y = event.clientY;
 }
 
 function closeContextMenu() {
   contextMenu.visible = false;
-}
-
-function handleContextMenuKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') closeContextMenu();
 }
 
 async function runContextAction(action: SidebarContextAction) {

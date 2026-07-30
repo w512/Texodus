@@ -9,7 +9,7 @@ import { cleanupTauriEventListeners } from '../utils/tauriEventCleanup';
 
 type EditorStore = ReturnType<typeof useEditorStore>;
 
-function uniqueOpenPaths(tabs: Tab[]): string[] {
+export function uniqueOpenPaths(tabs: Tab[]): string[] {
   // Keyed on the normalised path so one file opened under two spellings
   // (`\` vs `/` after a folder rename on Windows) is watched once, not twice.
   const byNormalized = new Map<string, string>();
@@ -21,6 +21,20 @@ function uniqueOpenPaths(tabs: Tab[]): string[] {
   return [...byNormalized.values()].sort();
 }
 
+export function watchedDirectory(path: string): string {
+  const parent = dirname(path);
+  if (parent) return normalizePath(parent);
+  if (path.startsWith('/') || path.startsWith('\\')) return '/';
+  return normalizePath(path);
+}
+
+export function mtimeValue(mtime: Date | string | number | null): string {
+  if (mtime instanceof Date) return String(mtime.getTime());
+  if (typeof mtime === 'string') return String(new Date(mtime).getTime());
+  if (typeof mtime === 'number') return String(mtime);
+  return 'no-mtime';
+}
+
 export function useFileWatch(store: EditorStore): void {
   const unwatchByDir = new Map<string, UnwatchFn>();
   const handlingPaths = new Set<string>();
@@ -28,25 +42,13 @@ export function useFileWatch(store: EditorStore): void {
   const failedReloadToastShown = new Set<string>();
   let pollTimer: number | null = null;
 
-  // Normalised so the watched-directory set keys on one spelling per directory
-  // (the fs plugin canonicalises the path, so forward slashes are fine on
-  // Windows — the same form `resolveLocalPath` already hands to readDir/stat).
-  function watchRootForPath(path: string): string {
-    return normalizePath(dirname(path) || path);
-  }
-
+  // Watched directories are normalised because the fs plugin canonicalises
+  // paths and folder renames can leave open tabs using mixed separators.
   function stopWatching(dir: string) {
     const unwatch = unwatchByDir.get(dir);
     if (!unwatch) return;
     unwatchByDir.delete(dir);
     unwatch();
-  }
-
-  function mtimeValue(mtime: Date | string | number | null): string {
-    if (mtime instanceof Date) return String(mtime.getTime());
-    if (typeof mtime === 'string') return String(new Date(mtime).getTime());
-    if (typeof mtime === 'number') return String(mtime);
-    return 'no-mtime';
   }
 
   async function getDiskFingerprint(path: string): Promise<string | null> {
@@ -169,7 +171,7 @@ export function useFileWatch(store: EditorStore): void {
         if (!desiredPaths.has(path)) failedReloadToastShown.delete(path);
       }
 
-      const desiredDirs = new Set(paths.map(watchRootForPath));
+      const desiredDirs = new Set(paths.map(watchedDirectory));
 
       for (const dir of [...unwatchByDir.keys()]) {
         if (!desiredDirs.has(dir)) stopWatching(dir);
@@ -184,7 +186,7 @@ export function useFileWatch(store: EditorStore): void {
             // looks at mtime/size first and reads content only when metadata
             // changed.
             for (const path of uniqueOpenPaths(store.tabs)) {
-              if (watchRootForPath(path) === dir) void reloadChangedPath(path);
+              if (watchedDirectory(path) === dir) void reloadChangedPath(path);
             }
           }, { delayMs: 300 });
           unwatchByDir.set(dir, unwatch);

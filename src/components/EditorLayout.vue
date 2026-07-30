@@ -8,7 +8,9 @@
     <div
       v-if="layoutMode === 'split'"
       class="pane-divider"
-      @mousedown="startDrag"
+      role="separator"
+      aria-orientation="vertical"
+      @pointerdown="startDrag"
     ></div>
     <Transition name="panel">
       <div v-if="layoutMode !== 'focus'" class="preview-pane" :style="paneStyle">
@@ -19,51 +21,75 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
-import { type LayoutMode } from '../stores/settings';
+import { computed, onUnmounted, ref, watch } from 'vue';
+import { type LayoutMode, useSettingsStore } from '../stores/settings';
 
 const props = defineProps<{
   layoutMode: LayoutMode;
 }>();
 
+const settingsStore = useSettingsStore();
 const containerRef = ref<HTMLElement | null>(null);
-const splitRatio = ref(0.5);
 
 const paneStyle = computed(() => {
   if (props.layoutMode !== 'split') return {};
-  return { flex: `0 0 ${splitRatio.value * 100}%` };
+  return { flex: `0 0 ${settingsStore.splitRatio * 100}%` };
 });
 
 // ── Draggable divider ────────────────────────────────────────────────────
 
-function startDrag(e: MouseEvent) {
-  e.preventDefault();
-  const container = containerRef.value;
-  if (!container) return;
+let dragPointerId: number | null = null;
+let dragHandle: HTMLElement | null = null;
 
-  const rect = container.getBoundingClientRect();
-  const onMove = (ev: MouseEvent) => {
-    const x = ev.clientX - rect.left;
-    const ratio = Math.max(0.15, Math.min(0.85, x / rect.width));
-    splitRatio.value = ratio;
-  };
-  const onUp = () => {
-    document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup', onUp);
-    document.body.style.userSelect = '';
-    document.body.style.cursor = '';
-  };
+function startDrag(event: PointerEvent) {
+  if (dragPointerId !== null || (event.pointerType === 'mouse' && event.button !== 0)) return;
+  event.preventDefault();
+  if (!containerRef.value) return;
 
+  dragPointerId = event.pointerId;
+  dragHandle = event.currentTarget as HTMLElement;
+  dragHandle.setPointerCapture?.(event.pointerId);
   document.body.style.userSelect = 'none';
   document.body.style.cursor = 'col-resize';
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup', onUp);
+  document.addEventListener('pointermove', handleDragMove);
+  document.addEventListener('pointerup', stopDrag);
+  document.addEventListener('pointercancel', stopDrag);
 }
 
-// Reset ratio when leaving split mode so it starts fresh next time.
+function handleDragMove(event: PointerEvent) {
+  if (event.pointerId !== dragPointerId) return;
+  const rect = containerRef.value?.getBoundingClientRect();
+  if (!rect || rect.width <= 0) return;
+
+  // Read the current rect on every move: the window can be resized while the
+  // pointer is held, and using the pointerdown rect makes the ratio drift.
+  settingsStore.setSplitRatio((event.clientX - rect.left) / rect.width);
+}
+
+function stopDrag(event?: PointerEvent) {
+  if (dragPointerId === null) return;
+  if (event && event.pointerId !== dragPointerId) return;
+
+  if (dragHandle?.hasPointerCapture?.(dragPointerId)) {
+    dragHandle.releasePointerCapture(dragPointerId);
+  }
+  dragPointerId = null;
+  dragHandle = null;
+  document.removeEventListener('pointermove', handleDragMove);
+  document.removeEventListener('pointerup', stopDrag);
+  document.removeEventListener('pointercancel', stopDrag);
+  document.body.style.userSelect = '';
+  document.body.style.cursor = '';
+  settingsStore.persistSplitRatio();
+}
+
+// Leaving split mode must end an in-progress gesture without resetting the
+// user's ratio; it will be reused when split mode is selected again.
 watch(() => props.layoutMode, (mode) => {
-  if (mode !== 'split') splitRatio.value = 0.5;
+  if (mode !== 'split') stopDrag();
 });
+
+onUnmounted(() => stopDrag());
 </script>
 
 <style scoped>
@@ -90,6 +116,7 @@ watch(() => props.layoutMode, (mode) => {
   background: var(--border-color);
   flex-shrink: 0;
   cursor: col-resize;
+  touch-action: none;
   transition: background 0.15s;
   position: relative;
   z-index: 1;

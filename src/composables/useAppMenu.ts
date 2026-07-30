@@ -17,6 +17,7 @@ import { useSettingsStore } from '../stores/settings';
 import { invoke } from '@tauri-apps/api/core';
 import { basename } from '../utils/path';
 import { isMac } from '../utils/platform';
+import { pruneMissingRecentFiles } from '../services/recentFilesService';
 
 type EditorStore = ReturnType<typeof useEditorStore>;
 type SettingsStore = ReturnType<typeof useSettingsStore>;
@@ -48,7 +49,7 @@ const mid = (id: string): string => `${id}--${windowLabel}`;
 /** Snapshot of every input that changes the menu's *structure* or the data
  *  captured in item closures (recent-file paths, Close vs Close Tab label).
  *  Everything else is read from live stores at click time. */
-function menuInputsKey(store: EditorStore, settingsStore: SettingsStore): string {
+export function menuInputsKey(store: EditorStore, settingsStore: SettingsStore): string {
   return JSON.stringify({
     recentFiles: settingsStore.recentFiles,
     documentMode: settingsStore.documentMode,
@@ -67,6 +68,7 @@ function menuInputsKey(store: EditorStore, settingsStore: SettingsStore): string
  */
 export async function setupAppMenu(store: EditorStore): Promise<void> {
   const settingsStore = useSettingsStore();
+  await pruneMissingRecentFiles(settingsStore);
   const key = menuInputsKey(store, settingsStore);
   if (!cachedMenu || key !== cachedMenuKey) {
     cachedMenu = await buildAppMenu(store, settingsStore);
