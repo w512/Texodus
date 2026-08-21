@@ -49,6 +49,15 @@ describe('settings store', () => {
     expect(store.searchHighlightColor).toBe('#abcdef');
   });
 
+  it('switches between filename and document-title labels', () => {
+    const store = useSettingsStore();
+    expect(store.documentTitleMode).toBe('filename');
+    store.setDocumentTitleMode('title');
+    expect(store.documentTitleMode).toBe('title');
+    store.persist();
+    expect(JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY)!).documentTitleMode).toBe('title');
+  });
+
   it('keeps recent files deduplicated, newest first, capped at 10', () => {
     const store = useSettingsStore();
     for (let i = 0; i < 12; i++) store.addRecentFile(`/f/${i}.md`);
@@ -205,12 +214,14 @@ describe('settings validation on load', () => {
       // A bogus documentMode would travel to Rust via report_window_status
       // and misroute OS "Open With" files.
       documentMode: 'panes',
+      documentTitleMode: 'metadata-only',
     }));
     localStorage.setItem('texodus.layoutMode.v1', JSON.stringify('zoomed'));
     const store = useSettingsStore();
     expect(store.themeMode).toBe('system');
     expect(store.colorScheme).toBe('default');
     expect(store.documentMode).toBe('windows');
+    expect(store.documentTitleMode).toBe('filename');
     expect(store.layoutMode).toBe('split');
   });
 

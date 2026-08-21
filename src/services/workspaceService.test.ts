@@ -1,14 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
-// Mock settings store to avoid localStorage persistence
-vi.mock('../stores/settings', () => ({
-  useSettingsStore: () => ({
-    lastWorkspacePath: null,
-    setLastWorkspacePath: vi.fn(),
-  }),
-}));
-
 import { readDir, type DirEntry } from '@tauri-apps/plugin-fs';
 import {
   loadWorkspaceTree,
@@ -16,8 +8,10 @@ import {
   refreshWorkspaceTree,
   refreshWorkspaceTreeIfPathInside,
   expandAndLoadParentDirectories,
+  openRememberedWorkspaceFolder,
 } from './workspaceService';
-import { useWorkspaceStore } from '../stores/workspace';
+import { useWorkspaceStore, WORKSPACE_UI_STORAGE_KEY } from '../stores/workspace';
+import { useSettingsStore } from '../stores/settings';
 
 const mockedReadDir = vi.mocked(readDir);
 
@@ -26,6 +20,7 @@ function entry(name: string, isDirectory: boolean): DirEntry {
 }
 
 beforeEach(() => {
+  localStorage.clear();
   setActivePinia(createPinia());
 });
 
@@ -80,6 +75,43 @@ describe('loadWorkspaceTree', () => {
     mockedReadDir.mockResolvedValue([entry('a.md', false)]);
     const tree = await loadWorkspaceTree('/root');
     expect(tree[0].path).toBe('/root/a.md');
+  });
+});
+
+describe('remembered workspace restore', () => {
+  it('quietly restores the tree, expanded directories, and selection', async () => {
+    useSettingsStore().setLastWorkspacePath('/root');
+    localStorage.setItem(WORKSPACE_UI_STORAGE_KEY, JSON.stringify({
+      rootPath: '/root',
+      expandedPaths: ['/root', '/root/docs', '/root/docs/sub'],
+      selectedPath: '/root/docs/sub/note.md',
+    }));
+    mockedReadDir.mockImplementation(async (path) => {
+      if (path === '/root') return [entry('docs', true)];
+      if (path === '/root/docs') return [entry('sub', true)];
+      if (path === '/root/docs/sub') return [entry('note.md', false)];
+      return [];
+    });
+
+    await openRememberedWorkspaceFolder(true);
+
+    const store = useWorkspaceStore();
+    expect(store.rootPath).toBe('/root');
+    expect(store.expandedPaths).toEqual(['/root', '/root/docs', '/root/docs/sub']);
+    expect(store.selectedPath).toBe('/root/docs/sub/note.md');
+    expect(store.tree[0].children?.[0].children?.[0].name).toBe('note.md');
+  });
+
+  it('leaves the sidebar empty without a startup error when restore fails', async () => {
+    useSettingsStore().setLastWorkspacePath('/missing');
+    mockedReadDir.mockRejectedValue(new Error('Folder not found'));
+
+    await openRememberedWorkspaceFolder(true);
+
+    const store = useWorkspaceStore();
+    expect(store.rootPath).toBeNull();
+    expect(store.error).toBeNull();
+    expect(store.isLoading).toBe(false);
   });
 });
 
@@ -146,6 +178,45 @@ describe('refreshWorkspaceTree', () => {
   it('does nothing without a rootPath argument or store rootPath', async () => {
     await refreshWorkspaceTree();
     expect(mockedReadDir).not.toHaveBeenCalled();
+  });
+
+  it('raises the loading flag while a foreground refresh is in flight', async () => {
+    const store = useWorkspaceStore();
+    let release: (() => void) | undefined;
+    mockedReadDir.mockReturnValue(new Promise((resolve) => {
+      release = () => resolve([entry('a.md', false)]);
+    }));
+
+    const pending = refreshWorkspaceTree('/root');
+    expect(store.isLoading).toBe(true);
+    release!();
+    await pending;
+    expect(store.isLoading).toBe(false);
+  });
+
+  it('never raises the loading flag for a background refresh', async () => {
+    const store = useWorkspaceStore();
+    let release: (() => void) | undefined;
+    mockedReadDir.mockReturnValue(new Promise((resolve) => {
+      release = () => resolve([entry('a.md', false)]);
+    }));
+
+    const pending = refreshWorkspaceTree('/root', { background: true });
+    expect(store.isLoading).toBe(false);
+    release!();
+    await pending;
+    expect(store.isLoading).toBe(false);
+    expect(store.tree).toHaveLength(1);
+  });
+
+  it('leaves a concurrent foreground refresh loading when a background one finishes', async () => {
+    const store = useWorkspaceStore();
+    store.setLoading(true);
+    mockedReadDir.mockResolvedValue([entry('a.md', false)]);
+
+    await refreshWorkspaceTree('/root', { background: true });
+
+    expect(store.isLoading).toBe(true);
   });
 });
 

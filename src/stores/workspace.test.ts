@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
-import { useWorkspaceStore } from './workspace';
+import { useWorkspaceStore, WORKSPACE_UI_STORAGE_KEY } from './workspace';
 import type { FileTreeNode } from '../utils/workspaceTree';
 
 beforeEach(() => {
+  localStorage.clear();
   setActivePinia(createPinia());
 });
 
@@ -25,6 +26,7 @@ describe('workspace store', () => {
     expect(store.tree).toEqual([]);
     expect(store.expandedPaths).toEqual([]);
     expect(store.selectedPath).toBeNull();
+    expect(store.documentTitles).toEqual({});
     expect(store.isLoading).toBe(false);
     expect(store.error).toBeNull();
   });
@@ -58,6 +60,52 @@ describe('workspace store', () => {
     });
   });
 
+  describe('UI state persistence', () => {
+    it('restores expanded and selected paths when reopening the same workspace', () => {
+      const store = useWorkspaceStore();
+      store.setWorkspace('/root', makeTree());
+      store.expandPath('/root/docs');
+      store.setSelectedPath('/root/docs/b.md');
+
+      setActivePinia(createPinia());
+      const restored = useWorkspaceStore();
+      restored.setWorkspace('/root', makeTree());
+
+      expect(restored.expandedPaths).toEqual(['/root', '/root/docs']);
+      expect(restored.selectedPath).toBe('/root/docs/b.md');
+    });
+
+    it('ignores persisted paths outside the workspace and malformed payloads', () => {
+      localStorage.setItem(WORKSPACE_UI_STORAGE_KEY, JSON.stringify({
+        rootPath: '/root',
+        expandedPaths: ['/root/docs', '/other/private'],
+        selectedPath: '/other/private.md',
+      }));
+      const store = useWorkspaceStore();
+      store.setWorkspace('/root', makeTree());
+      expect(store.expandedPaths).toEqual(['/root', '/root/docs']);
+      expect(store.selectedPath).toBeNull();
+
+      setActivePinia(createPinia());
+      localStorage.setItem(WORKSPACE_UI_STORAGE_KEY, '{bad');
+      const malformed = useWorkspaceStore();
+      malformed.setWorkspace('/root', makeTree());
+      expect(malformed.expandedPaths).toEqual(['/root']);
+    });
+
+    it('does not apply UI state saved for a different workspace', () => {
+      localStorage.setItem(WORKSPACE_UI_STORAGE_KEY, JSON.stringify({
+        rootPath: '/old',
+        expandedPaths: ['/old/docs'],
+        selectedPath: '/old/docs/a.md',
+      }));
+      const store = useWorkspaceStore();
+      store.setWorkspace('/new', []);
+      expect(store.expandedPaths).toEqual(['/new']);
+      expect(store.selectedPath).toBeNull();
+    });
+  });
+
   describe('toggleExpanded', () => {
     it('adds a path when not expanded', () => {
       const store = useWorkspaceStore();
@@ -81,6 +129,17 @@ describe('workspace store', () => {
       store.expandPath('/foo');
       store.expandPath('/foo');
       expect(store.expandedPaths.filter((p) => p === '/foo')).toHaveLength(1);
+    });
+  });
+
+  describe('document titles', () => {
+    it('stores titles and clears them when switching workspaces', () => {
+      const store = useWorkspaceStore();
+      store.setWorkspace('/root', makeTree());
+      store.setDocumentTitle('/root/a.md', 'Alpha');
+      expect(store.documentTitles['/root/a.md']).toBe('Alpha');
+      store.setWorkspace('/other', []);
+      expect(store.documentTitles).toEqual({});
     });
   });
 
@@ -171,6 +230,7 @@ describe('workspace store', () => {
       expect(store.tree).toEqual([]);
       expect(store.expandedPaths).toEqual([]);
       expect(store.selectedPath).toBeNull();
+      expect(store.documentTitles).toEqual({});
       expect(store.isLoading).toBe(false);
       expect(store.error).toBeNull();
     });

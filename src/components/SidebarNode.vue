@@ -27,7 +27,7 @@
         :style="{ '--icon': `url(${node.kind === 'directory' ? (isExpanded ? iconOpenFolder : iconFolder) : iconDocument})` }"
         aria-hidden="true"
       ></span>
-      <span class="sidebar-node__name" :title="node.path">{{ node.name }}</span>
+      <span class="sidebar-node__name" :title="node.path">{{ displayName }}</span>
     </button>
 
     <ul v-if="node.kind === 'directory' && isExpanded" class="sidebar-node__children">
@@ -40,6 +40,8 @@
         :expanded-paths="expandedPaths"
         :dragging-path="draggingPath"
         :drop-target-path="dropTargetPath"
+        :document-title-mode="documentTitleMode"
+        :document-titles="documentTitles"
         @open-file="(path, newWindow) => $emit('open-file', path, newWindow)"
         @toggle-directory="$emit('toggle-directory', $event)"
         @node-context-menu="(childNode, event) => $emit('node-context-menu', childNode, event)"
@@ -52,6 +54,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { type FileTreeNode } from '../stores/workspace';
+import type { DocumentTitleMode } from '../stores/settings';
 import { isSameOrInside } from '../utils/path';
 import iconFolder from '../assets/icons/icons8-folder-100.png';
 import iconDocument from '../assets/icons/icons8-document-100.png';
@@ -65,6 +68,8 @@ const props = defineProps<{
   expandedPaths: string[];
   draggingPath: string | null;
   dropTargetPath: string | null;
+  documentTitleMode: DocumentTitleMode;
+  documentTitles: Record<string, string>;
 }>();
 
 const emit = defineEmits<{
@@ -75,6 +80,10 @@ const emit = defineEmits<{
 }>();
 
 const isExpanded = computed(() => props.expandedPaths.includes(props.node.path));
+const displayName = computed(() => {
+  if (props.node.kind === 'directory' || props.documentTitleMode === 'filename') return props.node.name;
+  return props.documentTitles[props.node.path] ?? props.node.name;
+});
 const canDropHere = computed(() => {
   if (!props.draggingPath) return false;
   if (props.node.kind !== 'directory') return false;

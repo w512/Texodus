@@ -30,4 +30,13 @@ describe('quick open file collection', () => {
     ]);
     expect(tree[0].name).toBe('z.md');
   });
+
+  it('uses cached document titles only when title mode is requested', () => {
+    const files = collectFiles(tree);
+    const titles = { '/ws/z.md': 'Zebra', '/ws/docs/a.md': 'Alpha' };
+    expect(toQuickOpenFiles(files, titles, true).map((file) => file.displayTitle))
+      .toEqual(['Alpha', 'Zebra']);
+    expect(toQuickOpenFiles(files, titles, false).map((file) => file.displayTitle))
+      .toEqual(['a.md', 'z.md']);
+  });
 });

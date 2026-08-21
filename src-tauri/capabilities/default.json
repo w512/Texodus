@@ -9,11 +9,6 @@
     "core:window:allow-close",
     "core:window:allow-destroy",
     "core:window:allow-set-title",
-    "opener:default",
-    {
-      "identifier": "opener:allow-reveal-item-in-dir",
-      "allow": [{ "path": "**" }]
-    },
     "fs:default",
     "fs:allow-stat",
     "fs:allow-read-dir",

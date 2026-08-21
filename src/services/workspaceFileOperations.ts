@@ -1,6 +1,6 @@
 import { mkdir, remove, rename, stat, writeTextFile } from '@tauri-apps/plugin-fs';
 import { confirm, message } from '@tauri-apps/plugin-dialog';
-import { revealItemInDir } from '@tauri-apps/plugin-opener';
+import { invoke } from '@tauri-apps/api/core';
 import { useEditorStore } from '../stores/editor';
 import { type FileTreeNode, useWorkspaceStore } from '../stores/workspace';
 import { promptUnsavedChanges } from '../composables/useUnsavedPrompt';
@@ -203,7 +203,7 @@ export async function deleteWorkspaceNode(node: FileTreeNode): Promise<void> {
 
 export async function revealWorkspaceNode(node: FileTreeNode): Promise<void> {
   try {
-    await revealItemInDir(node.path);
+    await invoke('reveal_scoped_item', { path: node.path });
   } catch (e) {
     await message(`Failed to reveal item: ${e instanceof Error ? e.message : String(e)}`, { title: 'Error', kind: 'error' });
   }

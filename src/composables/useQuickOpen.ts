@@ -13,6 +13,8 @@ import { type FileTreeNode } from '../utils/workspaceTree';
 import { isMac } from '../utils/platform';
 import { requestNavigateToPath } from '../services/fileService';
 import { listWorkspaceFilesRecursively } from '../services/workspaceService';
+import { useSettingsStore } from '../stores/settings';
+import { loadDocumentTitles } from '../services/documentTitleService';
 
 export interface QuickOpenFile {
   path: string;
@@ -48,29 +50,40 @@ const isMacPlatform = isMac;
 // Result of the eager whole-workspace scan kicked off by openQuickOpen().
 // The sidebar tree is lazily loaded (children appear only when a directory is
 // expanded), so searching the tree alone would miss most of the workspace.
-const scannedFiles = ref<QuickOpenFile[] | null>(null);
+const scannedNodes = ref<FileTreeNode[] | null>(null);
 let scannedRoot: string | null = null;
 let scanToken = 0;
 
-export function toQuickOpenFiles(nodes: FileTreeNode[]): QuickOpenFile[] {
+export function toQuickOpenFiles(
+  nodes: FileTreeNode[],
+  titles: Record<string, string> = {},
+  useTitles = false,
+): QuickOpenFile[] {
   return nodes
-    .map((node) => ({ path: node.path, name: node.name, displayTitle: node.name }))
+    .map((node) => ({
+      path: node.path,
+      name: node.name,
+      displayTitle: useTitles ? (titles[node.path] ?? node.name) : node.name,
+    }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 async function scanWorkspaceFiles(): Promise<void> {
   const root = useWorkspaceStore().rootPath;
   if (!root) {
-    scannedFiles.value = null;
+    scannedNodes.value = null;
     scannedRoot = null;
     return;
   }
   const token = ++scanToken;
   try {
     const files = await listWorkspaceFilesRecursively(root);
+    if (useSettingsStore().documentTitleMode === 'title') {
+      await loadDocumentTitles(files);
+    }
     if (token !== scanToken) return; // superseded by a newer scan
     scannedRoot = root;
-    scannedFiles.value = toQuickOpenFiles(files);
+    scannedNodes.value = files;
   } catch {
     // Scan failed (permissions, root vanished) — keep the tree fallback.
   }
@@ -81,14 +94,21 @@ async function scanWorkspaceFiles(): Promise<void> {
  *  tree has so far while the scan is in flight. */
 const allFiles: ComputedRef<QuickOpenFile[]> = computed(() => {
   const store = useWorkspaceStore();
-  if (scannedFiles.value && scannedRoot === store.rootPath) return scannedFiles.value;
-  if (!store.tree.length) return [];
-  return toQuickOpenFiles(collectFiles(store.tree));
+  const useTitles = useSettingsStore().documentTitleMode === 'title';
+  const nodes = scannedNodes.value && scannedRoot === store.rootPath
+    ? scannedNodes.value
+    : collectFiles(store.tree);
+  if (!nodes.length) return [];
+  return toQuickOpenFiles(nodes, store.documentTitles, useTitles);
 });
 
 /** Ranked search results for the current query. */
 const results: ComputedRef<RankedResult<QuickOpenFile>[]> = computed(() => {
-  return fuzzySearch(query.value, allFiles.value, (f) => f.name).slice(0, MAX_RESULTS);
+  return fuzzySearch(
+    query.value,
+    allFiles.value,
+    (file) => `${file.displayTitle} ${file.name}`,
+  ).slice(0, MAX_RESULTS);
 });
 
 /** Open the Quick Open palette. Exported at module level so the native menu

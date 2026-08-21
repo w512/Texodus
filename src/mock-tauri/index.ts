@@ -1,10 +1,9 @@
 /**
  * Mock Tauri layer for browser dev and unit tests.
  *
- * Provides an in-memory file system and mock implementations for all Tauri
- * commands used by the app. In tests, import the helpers to set up file
- * content and control invoke handlers. In browser dev mode, the polyfill
- * auto-installs when Tauri is not detected.
+ * Provides an in-memory file system and mock implementations for Tauri calls
+ * used by unit tests. Import the helpers to set up file content and control
+ * invoke handlers; `src/test/setup.ts` wires these implementations to Vitest.
  */
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -215,7 +214,7 @@ export const mockFs = {
 };
 
 export const mockDialog = {
-  open: async () => null as string | string | null,
+  open: async () => null as string | string[] | null,
   save: async () => null as string | null,
   message: async () => undefined,
   confirm: async () => true,
@@ -263,8 +262,8 @@ const mockMenu = {
   },
 };
 
-const mockOpener = {
-  revealItemInDir: async (_path: string): Promise<void> => {},
+const mockShell = {
+  open: async (_target: string): Promise<void> => {},
 };
 
 export const mockApis = {
@@ -275,18 +274,5 @@ export const mockApis = {
   '@tauri-apps/api/webview': { getCurrentWebview: () => mockWebview },
   '@tauri-apps/api/event': mockEvent,
   '@tauri-apps/api/menu': mockMenu,
-  '@tauri-apps/plugin-opener': mockOpener,
+  '@tauri-apps/plugin-shell': mockShell,
 };
-
-// ── Browser polyfill ────────────────────────────────────────────────────────────
-
-/** Install mock Tauri globals on the window object for browser dev mode. */
-export function installBrowserPolyfill(): void {
-  if (typeof window === 'undefined') return;
-  // Already has Tauri — don't polyfill.
-  if (isTauri()) return;
-
-  // Install minimal globals so static imports don't crash.
-  (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
-  (window as unknown as Record<string, unknown>).__TAURI__ = {};
-}

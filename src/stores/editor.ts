@@ -3,9 +3,8 @@ import { defineStore } from 'pinia';
 /**
  * A single open document. The store always holds at least one tab; closing
  * the last tab resets it to a fresh blank tab rather than emptying the array.
- *
- * Stage 1 of the tabs refactor: state shape is multi-tab, but only one tab
- * ever exists at runtime — UI for managing multiple tabs lands in stage 2.
+ * TabBar exposes the multi-tab state in tabs mode; windows mode uses the same
+ * model internally, typically with one document per OS window.
  */
 export interface Tab {
   id: string;

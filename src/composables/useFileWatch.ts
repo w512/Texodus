@@ -6,6 +6,7 @@ import { promptUnsavedChanges, whenPromptsIdle } from './useUnsavedPrompt';
 import { saveFile, showToast, updateWindowTitle } from '../services/fileService';
 import { wasWrittenWithContent } from '../utils/writeSuppression';
 import { cleanupTauriEventListeners } from '../utils/tauriEventCleanup';
+import { updateDocumentTitleFromContent } from '../services/documentTitleService';
 
 type EditorStore = ReturnType<typeof useEditorStore>;
 
@@ -73,6 +74,7 @@ export function useFileWatch(store: EditorStore): void {
       if (fingerprint && knownDiskVersionByPath.get(path) === fingerprint) return;
 
       const diskContent = await readTextFile(path);
+      updateDocumentTitleFromContent(path, diskContent);
 
       // Suppress only when the on-disk content matches what *we* just wrote —
       // i.e. the watcher is echoing our own save (auto-save or manual save). A

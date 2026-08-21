@@ -12,7 +12,7 @@
       }"
       role="tab"
       :aria-selected="tab.id === editorStore.activeTabId"
-      :title="tab.filePath ? `${labelFor(tab)} — ${tab.filePath}` : 'Untitled'"
+      :title="tab.filePath ? `${labelFor(tab)} — ${tab.filePath}` : labelFor(tab)"
       @click="handleTabClick(tab.id)"
       @mousedown.middle.prevent="onClose(tab.id, $event)"
       @contextmenu.prevent="openContextMenu($event, tab.id)"
@@ -70,6 +70,7 @@ import { saveFile, showToast, updateWindowTitle } from '../services/fileService'
 import { basename } from '../utils/path';
 import { flushPendingSave } from '../composables/useAutoSave';
 import ContextMenu from './ContextMenu.vue';
+import { documentTitleFromContent } from '../services/documentTitleService';
 
 const editorStore = useEditorStore();
 const settingsStore = useSettingsStore();
@@ -79,7 +80,10 @@ const isVisible = computed(
 );
 
 function labelFor(tab: Tab): string {
-  return tab.filePath ? basename(tab.filePath) : 'Untitled';
+  const filename = tab.filePath ? basename(tab.filePath) : 'Untitled';
+  return settingsStore.documentTitleMode === 'title'
+    ? documentTitleFromContent(tab.content, filename)
+    : filename;
 }
 
 async function onClose(id: string, event: Event) {

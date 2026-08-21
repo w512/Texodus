@@ -2,10 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { rename, remove } from '@tauri-apps/plugin-fs';
 import { message } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
 import { setMockFile } from '../mock-tauri';
 import { useEditorStore } from '../stores/editor';
 import type { FileTreeNode } from '../stores/workspace';
-import { deleteWorkspaceNode, renameWorkspaceNode } from './workspaceFileOperations';
+import {
+  deleteWorkspaceNode,
+  renameWorkspaceNode,
+  revealWorkspaceNode,
+} from './workspaceFileOperations';
 
 // Never render the unsaved-changes modal in tests; the flows under test use
 // clean tabs, so this is only a safety net.
@@ -23,6 +28,19 @@ function dirNode(path: string): FileTreeNode {
 
 beforeEach(() => {
   setActivePinia(createPinia());
+});
+
+describe('revealWorkspaceNode', () => {
+  it('uses the Rust scope-checking wrapper instead of direct opener access', async () => {
+    await revealWorkspaceNode(fileNode('/ws/note.md'));
+    expect(invoke).toHaveBeenCalledWith('reveal_scoped_item', { path: '/ws/note.md' });
+  });
+
+  it('shows an error returned by the scoped wrapper', async () => {
+    vi.mocked(invoke).mockRejectedValueOnce(new Error('outside scope'));
+    await revealWorkspaceNode(fileNode('/private/note.md'));
+    expect(message).toHaveBeenCalled();
+  });
 });
 
 describe('deleteWorkspaceNode — P2: resets every affected tab', () => {

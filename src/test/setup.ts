@@ -43,7 +43,9 @@ vi.mock('@tauri-apps/api/window', () => mockApis['@tauri-apps/api/window']);
 vi.mock('@tauri-apps/api/webview', () => mockApis['@tauri-apps/api/webview']);
 vi.mock('@tauri-apps/api/event', () => mockApis['@tauri-apps/api/event']);
 vi.mock('@tauri-apps/api/menu', () => mockApis['@tauri-apps/api/menu']);
-vi.mock('@tauri-apps/plugin-opener', () => mockApis['@tauri-apps/plugin-opener']);
+vi.mock('@tauri-apps/plugin-shell', () => ({
+  open: vi.fn((target: string) => mockApis['@tauri-apps/plugin-shell'].open(target)),
+}));
 
 // Reset mock state and restore default implementations before each test.
 beforeEach(() => {

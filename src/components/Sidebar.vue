@@ -63,6 +63,8 @@
           :expanded-paths="workspaceStore.expandedPaths"
           :dragging-path="draggingNode?.path ?? null"
           :drop-target-path="dropTargetPath"
+          :document-title-mode="settingsStore.documentTitleMode"
+          :document-titles="workspaceStore.documentTitles"
           @open-file="openFile"
           @toggle-directory="toggleDirectory"
           @node-context-menu="openNodeContextMenu"
@@ -119,6 +121,7 @@ import { type FileTreeNode } from '../stores/workspace';
 import { useSidebarDragDrop } from '../composables/useSidebarDragDrop';
 import { basename } from '../utils/path';
 import iconOpenFolder from '../assets/icons/icons8-open-file-100.png';
+import { loadDocumentTitles } from '../services/documentTitleService';
 
 const editorStore = useEditorStore();
 const settingsStore = useSettingsStore();
@@ -155,6 +158,14 @@ watch(
   () => editorStore.filePath,
   (path) => workspaceStore.setSelectedPath(path),
   { immediate: true }
+);
+
+watch(
+  [() => settingsStore.documentTitleMode, () => workspaceStore.tree],
+  ([mode]) => {
+    if (mode === 'title') void loadDocumentTitles(workspaceStore.tree);
+  },
+  { immediate: true, deep: true },
 );
 
 onMounted(() => {

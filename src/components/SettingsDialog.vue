@@ -68,6 +68,26 @@
           </div>
 
           <div class="settings-row">
+            <label>Document names</label>
+            <div class="segmented" role="radiogroup" aria-label="Document name display">
+              <button
+                type="button"
+                role="radio"
+                :aria-checked="settingsStore.documentTitleMode === 'filename'"
+                :class="{ active: settingsStore.documentTitleMode === 'filename' }"
+                @click="settingsStore.setDocumentTitleMode('filename')"
+              >File names</button>
+              <button
+                type="button"
+                role="radio"
+                :aria-checked="settingsStore.documentTitleMode === 'title'"
+                :class="{ active: settingsStore.documentTitleMode === 'title' }"
+                @click="settingsStore.setDocumentTitleMode('title')"
+              >Document titles</button>
+            </div>
+          </div>
+
+          <div class="settings-row">
             <label>Scroll sync</label>
             <div class="segmented" role="radiogroup" aria-label="Scroll sync smoothing">
               <button

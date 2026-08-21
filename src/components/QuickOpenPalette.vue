@@ -12,7 +12,7 @@
             v-model="quickOpen.query.value"
             class="quick-open-input"
             type="text"
-            placeholder="Search files by name…"
+            placeholder="Search documents…"
             spellcheck="false"
             autocomplete="off"
           />
@@ -26,7 +26,7 @@
               @mousemove="quickOpen.selectedIndex.value = i"
             >
               <span class="quick-open-item__icon">📄</span>
-              <span class="quick-open-item__name">{{ result.item.name }}</span>
+              <span class="quick-open-item__name" :title="result.item.path">{{ result.item.displayTitle }}</span>
               <span class="quick-open-item__dir">{{ dirOf(result.item.path) }}</span>
             </div>
           </div>

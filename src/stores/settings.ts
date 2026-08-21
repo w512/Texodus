@@ -4,6 +4,7 @@ import { COLOR_SCHEME_IDS, type ColorSchemeId } from '../themes';
 export type LayoutMode = 'split' | 'preview' | 'focus';
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type DocumentMode = 'windows' | 'tabs';
+export type DocumentTitleMode = 'filename' | 'title';
 export type { ColorSchemeId };
 
 export interface FontOption {
@@ -74,6 +75,7 @@ interface PersistedSettings {
   lineHeight: number;
   recentFiles: string[];
   documentMode: DocumentMode;
+  documentTitleMode: DocumentTitleMode;
   sidebarVisible: boolean;
   sidebarWidth: number;
   lastWorkspacePath: string | null;
@@ -102,6 +104,7 @@ const DEFAULTS: PersistedSettings = {
   lineHeight: 1.75,
   recentFiles: [],
   documentMode: 'windows',
+  documentTitleMode: 'filename',
   sidebarVisible: true,
   sidebarWidth: 260,
   lastWorkspacePath: null,
@@ -129,6 +132,7 @@ let lastPersisted: string | null = null;
 
 const THEME_MODES: readonly ThemeMode[] = ['light', 'dark', 'system'];
 const DOCUMENT_MODES: readonly DocumentMode[] = ['windows', 'tabs'];
+const DOCUMENT_TITLE_MODES: readonly DocumentTitleMode[] = ['filename', 'title'];
 const LAYOUT_MODES: readonly LayoutMode[] = ['split', 'preview', 'focus'];
 
 function oneOf<T extends string>(allowed: readonly T[], value: unknown, fallback: T): T {
@@ -185,6 +189,9 @@ function sanitizePersisted(raw: unknown): PersistedSettings {
     ),
     recentFiles: pathList(p.recentFiles, RECENT_FILES_MAX),
     documentMode: oneOf(DOCUMENT_MODES, p.documentMode, DEFAULTS.documentMode),
+    documentTitleMode: oneOf(
+      DOCUMENT_TITLE_MODES, p.documentTitleMode, DEFAULTS.documentTitleMode,
+    ),
     sidebarVisible: bool(p.sidebarVisible, DEFAULTS.sidebarVisible),
     sidebarWidth: clampedNumber(
       p.sidebarWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH, DEFAULTS.sidebarWidth, Math.round,
@@ -272,6 +279,7 @@ export const useSettingsStore = defineStore('settings', {
     setThemeMode(mode: ThemeMode) { this.themeMode = mode; },
     setColorScheme(id: ColorSchemeId) { this.colorScheme = id; },
     setDocumentMode(mode: DocumentMode) { this.documentMode = mode; },
+    setDocumentTitleMode(mode: DocumentTitleMode) { this.documentTitleMode = mode; },
     setSidebarVisible(v: boolean) { this.sidebarVisible = v; },
     toggleSidebar() { this.sidebarVisible = !this.sidebarVisible; },
     setSmoothScrollSync(v: boolean) { this.smoothScrollSync = v; },

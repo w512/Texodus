@@ -68,11 +68,11 @@ export async function openWorkspaceFolder(): Promise<void> {
   await refreshWorkspaceTree(selected);
 }
 
-export async function openRememberedWorkspaceFolder(): Promise<void> {
+export async function openRememberedWorkspaceFolder(silent = false): Promise<void> {
   const rememberedPath = useSettingsStore().lastWorkspacePath;
   if (!rememberedPath) return;
 
-  await refreshWorkspaceTree(rememberedPath);
+  await refreshWorkspaceTree(rememberedPath, { silent });
 }
 
 export async function loadWorkspaceDirectoryChildren(directoryPath: string): Promise<void> {
@@ -107,12 +107,26 @@ function pathDepth(path: string): number {
   return normalizePath(path).split('/').filter(Boolean).length;
 }
 
-export async function refreshWorkspaceTree(rootPath?: string): Promise<void> {
+/**
+ * Re-reads the workspace root plus every expanded directory.
+ *
+ * `silent` swallows the error instead of surfacing it in the sidebar (startup
+ * restore of a folder that may be gone). `background` additionally skips the
+ * `isLoading` flag: a refresh triggered by the fs watcher must not blank the
+ * tree behind "Loading files…" (`Sidebar.vue`) or disable the header buttons,
+ * and must not clear the flag out from under a concurrent user-initiated
+ * refresh. The tree is swapped in place once the read completes.
+ */
+export async function refreshWorkspaceTree(
+  rootPath?: string,
+  options: { silent?: boolean; background?: boolean } = {},
+): Promise<boolean> {
   const workspaceStore = useWorkspaceStore();
   const path = rootPath ?? workspaceStore.rootPath;
-  if (!path) return;
+  if (!path) return false;
 
-  workspaceStore.setLoading(true);
+  const showLoading = !options.background;
+  if (showLoading) workspaceStore.setLoading(true);
   workspaceStore.setError(null);
   try {
     // fs + asset scope for the workspace tree come from the folder-pick
@@ -121,10 +135,14 @@ export async function refreshWorkspaceTree(rootPath?: string): Promise<void> {
     const tree = await loadWorkspaceTree(path);
     workspaceStore.setWorkspace(path, tree);
     await reloadExpandedDirectories(path);
+    return true;
   } catch (e) {
-    workspaceStore.setError(e instanceof Error ? e.message : String(e));
+    if (!options.silent) {
+      workspaceStore.setError(e instanceof Error ? e.message : String(e));
+    }
+    return false;
   } finally {
-    workspaceStore.setLoading(false);
+    if (showLoading) workspaceStore.setLoading(false);
   }
 }
 

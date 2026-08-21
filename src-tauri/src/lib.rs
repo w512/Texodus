@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_fs::FsExt;
+use tauri_plugin_opener::OpenerExt;
 
 #[derive(Clone)]
 pub struct WindowStatus {
@@ -490,6 +491,26 @@ fn focus_window_with_path(
     label.is_some_and(|l| focus_window(&app, &l))
 }
 
+/// Reveals only paths already covered by the trusted runtime fs scope. Scope
+/// grants originate from native file/folder dialogs or OS drag-and-drop, so a
+/// compromised webview cannot use this command to probe arbitrary locations.
+#[tauri::command]
+fn reveal_scoped_item(app: AppHandle, path: String) -> Result<(), String> {
+    let path = PathBuf::from(path);
+    if !path.is_absolute() {
+        return Err("reveal path must be absolute".to_string());
+    }
+    let scope = app
+        .try_fs_scope()
+        .ok_or_else(|| "filesystem scope is unavailable".to_string())?;
+    if !scope.is_allowed(&path) {
+        return Err("path is outside the granted filesystem scope".to_string());
+    }
+    app.opener()
+        .reveal_item_in_dir(&path)
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 async fn open_new_window(
     app: tauri::AppHandle,
@@ -580,6 +601,7 @@ pub fn run() {
             list_system_fonts,
             open_new_window,
             focus_window_with_path,
+            reveal_scoped_item,
             pick_document,
             pick_save_path
         ])

@@ -1,8 +1,8 @@
 /**
  * Lightweight toast notification utility.
  *
- * Extracted from `fileService.ts` so that other services (e.g. `assetScopeService`,
- * `exportService`) can use it without creating circular import dependencies.
+ * Extracted from `fileService.ts` so services and composables can show
+ * notifications without creating circular import dependencies.
  */
 
 let toastContainer: HTMLElement | null = null;

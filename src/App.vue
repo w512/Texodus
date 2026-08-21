@@ -81,13 +81,14 @@ import { useWorkspaceWatch } from './composables/useWorkspaceWatch';
 import { useAutoSave, flushPendingSave } from './composables/useAutoSave';
 import { cleanupTauriEventListeners } from './utils/tauriEventCleanup';
 import { restoreSession, useSessionRestore } from './composables/useSessionRestore';
-import { refreshWorkspaceTree } from './services/workspaceService';
+import { openRememberedWorkspaceFolder, refreshWorkspaceTree } from './services/workspaceService';
 import { useWorkspaceStore } from './stores/workspace';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { copyFile } from '@tauri-apps/plugin-fs';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { updateDocumentTitleFromContent } from './services/documentTitleService';
 
 const settingsStore = useSettingsStore();
 const editorStore = useEditorStore();
@@ -159,6 +160,13 @@ const windowTitle = computed(() => {
 // ── Window title (§4.5) ───────────────────────────────────────────────────────
 
 watch(
+  [() => editorStore.filePath, () => editorStore.content, () => settingsStore.documentTitleMode],
+  ([path, content, mode]) => {
+    if (path && mode === 'title') updateDocumentTitleFromContent(path, content);
+  },
+);
+
+watch(
   [() => editorStore.filePath, () => editorStore.isDirty, () => settingsStore.documentMode],
   () => {
     void updateWindowTitle(editorStore);
@@ -205,6 +213,15 @@ onMounted(async () => {
     await setupAppMenu(editorStore);
   } catch (e) {
     console.warn('Native menu setup failed:', e);
+  }
+
+  // Restore the last workspace quietly. Persisted Tauri scopes normally make
+  // this transparent; a moved/deleted/inaccessible folder leaves the sidebar
+  // empty instead of showing a startup error.
+  try {
+    await openRememberedWorkspaceFolder(true);
+  } catch (e) {
+    console.warn('Workspace restore failed:', e);
   }
 
   // Restore tabs from previous session before draining pending files.

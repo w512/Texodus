@@ -2,6 +2,8 @@ import { onUnmounted, watch as vueWatch } from 'vue';
 import { watch as watchFs, type UnwatchFn, type WatchEvent } from '@tauri-apps/plugin-fs';
 import { useWorkspaceStore } from '../stores/workspace';
 import { refreshWorkspaceTree } from '../services/workspaceService';
+import { useSettingsStore } from '../stores/settings';
+import { refreshDocumentTitles } from '../services/documentTitleService';
 
 /**
  * Watches the open workspace root recursively and auto-refreshes the sidebar
@@ -15,6 +17,7 @@ import { refreshWorkspaceTree } from '../services/workspaceService';
  */
 export function useWorkspaceWatch(): void {
   const workspaceStore = useWorkspaceStore();
+  const settingsStore = useSettingsStore();
   let unwatch: UnwatchFn | null = null;
   let watchedRoot: string | null = null;
   let debounceTimer: number | null = null;
@@ -23,7 +26,9 @@ export function useWorkspaceWatch(): void {
     if (debounceTimer !== null) window.clearTimeout(debounceTimer);
     debounceTimer = window.setTimeout(() => {
       debounceTimer = null;
-      void refreshWorkspaceTree();
+      // `background`: this refresh is not user-initiated, so it must not put
+      // the sidebar into its loading state (that hides the whole tree).
+      void refreshWorkspaceTree(undefined, { background: true });
     }, 400);
   }
 
@@ -51,6 +56,9 @@ export function useWorkspaceWatch(): void {
           rootPath,
           (event) => {
             if (changesTree(event)) scheduleRefresh();
+            else if (settingsStore.documentTitleMode === 'title') {
+              void refreshDocumentTitles(event.paths);
+            }
           },
           { recursive: true, delayMs: 300 },
         );
