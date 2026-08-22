@@ -6,6 +6,7 @@ import { lexMarkdown, renderFrontmatterHtml, renderMarkdownToHtml, sanitizeMarkd
 import { renderMermaidBlocks, renderMermaidSvg } from "./mermaidRenderer";
 import { dirname, hasUrlScheme, isAbsolutePath, resolveLocalPath } from "../utils/path";
 import { showToast } from "../utils/toast";
+import { applyLineEnding, defaultLineEnding } from '../utils/lineEndings';
 
 type PdfMakeModule = {
   createPdf: (def: TDocumentDefinitions) => { getBlob: () => Promise<Blob> };
@@ -249,7 +250,9 @@ export async function exportTxt(markdown: string, filePath: string | null): Prom
     });
     if (!savePath) return false;
 
-    await writeTextFile(savePath as string, markdown);
+    // A freshly created plain-text file, so it follows the host OS rather than
+    // the source document — .txt is the format where Windows tools still care.
+    await writeTextFile(savePath as string, applyLineEnding(markdown, defaultLineEnding()));
     showToast('Exported as TXT');
     return true;
   } catch (e) {

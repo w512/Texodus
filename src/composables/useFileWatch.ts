@@ -5,6 +5,7 @@ import { basename, dirname, isSamePath, normalizePath } from '../utils/path';
 import { promptUnsavedChanges, whenPromptsIdle } from './useUnsavedPrompt';
 import { saveFile, showToast, updateWindowTitle } from '../services/fileService';
 import { wasWrittenWithContent } from '../utils/writeSuppression';
+import { detectLineEnding, normalizeLineEndings } from '../utils/lineEndings';
 import { cleanupTauriEventListeners } from '../utils/tauriEventCleanup';
 import { updateDocumentTitleFromContent } from '../services/documentTitleService';
 
@@ -73,19 +74,25 @@ export function useFileWatch(store: EditorStore): void {
       const fingerprint = await getDiskFingerprint(path);
       if (fingerprint && knownDiskVersionByPath.get(path) === fingerprint) return;
 
-      const diskContent = await readTextFile(path);
-      updateDocumentTitleFromContent(path, diskContent);
+      // `diskRaw` keeps the file's own line endings — needed to recognise our
+      // own writes and to record the ending on reload. `diskContent` is the
+      // normalised form the buffer holds, so CRLF alone never reads as a
+      // change (which is what made opening a CRLF file raise a false conflict).
+      const diskRaw = await readTextFile(path);
+      const diskContent = normalizeLineEndings(diskRaw);
+      const diskLineEnding = detectLineEnding(diskRaw);
+      updateDocumentTitleFromContent(path, diskRaw);
 
       // Suppress only when the on-disk content matches what *we* just wrote —
       // i.e. the watcher is echoing our own save (auto-save or manual save). A
       // genuine external edit that lands inside the suppression window has
       // different content and is therefore NOT suppressed: it still reloads.
-      if (wasWrittenWithContent(path, diskContent)) {
-        knownDiskVersionByPath.set(path, fingerprint ?? `content:${diskContent}`);
+      if (wasWrittenWithContent(path, diskRaw)) {
+        knownDiskVersionByPath.set(path, fingerprint ?? `content:${diskRaw}`);
         return;
       }
 
-      const version = fingerprint ?? `content:${diskContent}`;
+      const version = fingerprint ?? `content:${diskRaw}`;
       if (knownDiskVersionByPath.get(path) === version) return;
       knownDiskVersionByPath.set(path, version);
       failedReloadToastShown.delete(path);
@@ -100,12 +107,15 @@ export function useFileWatch(store: EditorStore): void {
         if (!tab) continue;
 
         if (tab.content === diskContent) {
+          // Same text, possibly re-written with different endings by an
+          // external tool — follow the file so our next save doesn't flip it.
+          store.setTabLineEnding(id, diskLineEnding);
           if (tab.isDirty) store.setTabDirty(id, false);
           continue;
         }
 
         if (!tab.isDirty) {
-          store.loadTabFile(id, diskContent, path);
+          store.loadTabFile(id, diskRaw, path);
           showToast(`${basename(path)} reloaded`);
           continue;
         }
@@ -119,11 +129,12 @@ export function useFileWatch(store: EditorStore): void {
         const fresh = store.tabs.find((candidate) => candidate.id === id && matchesPath(candidate));
         if (!fresh) continue;
         if (fresh.content === diskContent) {
+          store.setTabLineEnding(id, diskLineEnding);
           if (fresh.isDirty) store.setTabDirty(id, false);
           continue;
         }
         if (!fresh.isDirty) {
-          store.loadTabFile(id, diskContent, path);
+          store.loadTabFile(id, diskRaw, path);
           showToast(`${basename(path)} reloaded`);
           continue;
         }
@@ -138,11 +149,11 @@ export function useFileWatch(store: EditorStore): void {
         });
 
         if (choice === 'discard') {
-          store.loadFile(diskContent, path);
+          store.loadFile(diskRaw, path);
           showToast(`${basename(path)} reloaded`);
         } else if (choice === 'save') {
           await saveFile(store);
-          knownDiskVersionByPath.set(path, await getDiskFingerprint(path) ?? `content:${store.content}`);
+          knownDiskVersionByPath.set(path, await getDiskFingerprint(path) ?? `content:${store.diskContent}`);
         } else {
           showToast('Kept local changes');
         }

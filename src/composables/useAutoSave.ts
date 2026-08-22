@@ -19,6 +19,7 @@ import { useSettingsStore } from '../stores/settings';
 import { showToast } from '../utils/toast';
 import { isSamePath } from '../utils/path';
 import { markFileWritten } from '../utils/writeSuppression';
+import { applyLineEnding, type LineEnding } from '../utils/lineEndings';
 
 type EditorStore = ReturnType<typeof useEditorStore>;
 
@@ -28,6 +29,9 @@ const AUTOSAVE_DEBOUNCE_MS = 1500;
 
 interface PendingSave {
   content: string;
+  // Captured with the content: by the time the debounce fires the tab may be
+  // gone (closed, renamed), and the file must still keep its own ending.
+  lineEnding: LineEnding;
   timer: ReturnType<typeof setTimeout>;
 }
 
@@ -54,7 +58,7 @@ async function drainPending(): Promise<boolean> {
     pending.clear();
     for (const [, p] of entries) clearTimeout(p.timer);
     for (const [path, p] of entries) {
-      if (await doSave(path, p.content)) saved = true;
+      if (await doSave(path, p.content, p.lineEnding)) saved = true;
     }
   }
   return saved;
@@ -77,16 +81,17 @@ export function flushPendingSave(): Promise<boolean> {
   return currentFlush;
 }
 
-async function doSave(path: string, content: string): Promise<boolean> {
+async function doSave(path: string, content: string, lineEnding: LineEnding): Promise<boolean> {
+  const data = applyLineEnding(content, lineEnding);
   try {
-    await writeTextFile(path, content);
+    await writeTextFile(path, data);
     const store = useEditorStore();
     // Normalised compare: `path` was captured when the save was scheduled, and
     // a folder rename in between rewrites the tab's path to forward slashes —
     // a `===` miss here would leave the tab dirty after a successful write.
     const tab = store.tabs.find((t) => t.filePath && isSamePath(t.filePath, path));
     if (tab) store.setTabDirty(tab.id, false);
-    markFileWritten(path, content);
+    markFileWritten(path, data);
     return true;
   } catch (e) {
     console.warn('Auto-save failed:', path, e);
@@ -95,14 +100,14 @@ async function doSave(path: string, content: string): Promise<boolean> {
   }
 }
 
-function scheduleSave(path: string, content: string): void {
+function scheduleSave(path: string, content: string, lineEnding: LineEnding): void {
   const existing = pending.get(path);
   if (existing) clearTimeout(existing.timer);
   const timer = setTimeout(() => {
     pending.delete(path);
-    void doSave(path, content);
+    void doSave(path, content, lineEnding);
   }, AUTOSAVE_DEBOUNCE_MS);
-  pending.set(path, { content, timer });
+  pending.set(path, { content, lineEnding, timer });
 }
 
 /**
@@ -128,7 +133,7 @@ export function useAutoSave(store: EditorStore): void {
         // `store.content` (the getter follows the active tab) but leaves the
         // newly-active tab clean — don't rewrite an unmodified file to disk.
         if (!tab.isDirty) return;
-        scheduleSave(tab.filePath, newContent);
+        scheduleSave(tab.filePath, newContent, tab.lineEnding);
       },
     );
   }

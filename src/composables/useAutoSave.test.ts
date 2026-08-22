@@ -102,4 +102,25 @@ describe('flushPendingSave with a write in flight', () => {
     expect(hasPendingSave()).toBe(false);
     expect(store.isDirty).toBe(false);
   });
+
+  // The debounce captures the ending alongside the content: by the time the
+  // write fires the tab may be gone, and an auto-save must never be the thing
+  // that quietly converts a Windows file to LF.
+  it('auto-saves with the file own line endings', async () => {
+    const writes: [string, string][] = [];
+    vi.mocked(writeTextFile).mockImplementation(async (path: string | URL, content: string) => {
+      writes.push([String(path), content]);
+    });
+
+    const settings = useSettingsStore();
+    settings.setAutoSave(true);
+    const store = useEditorStore();
+    store.loadFile('a\r\nb\r\n', '/tmp/crlf.md');
+    scope.run(() => useAutoSave(store));
+    store.updateContent('a\nb\nc\n');
+    await nextTick();
+
+    expect(await flushPendingSave()).toBe(true);
+    expect(writes).toEqual([['/tmp/crlf.md', 'a\r\nb\r\nc\r\n']]);
+  });
 });

@@ -51,6 +51,16 @@ describe('saveFile', () => {
     expect(store.isDirty).toBe(false);
   });
 
+  it('writes back with the file own line endings', async () => {
+    const store = useEditorStore();
+    // A CRLF file, as opened on Windows: the buffer is LF, the file is not.
+    store.loadFile('a\r\nb\r\n', '/tmp/crlf.md');
+    store.updateContent('a\nb\nc\n');
+
+    await saveFile(store);
+    expect(mockedWriteTextFile).toHaveBeenCalledWith('/tmp/crlf.md', 'a\r\nb\r\nc\r\n');
+  });
+
   it('falls back to saveFileAs when no file path is set', async () => {
     const store = useEditorStore();
     store.updateContent('new content');
@@ -85,6 +95,16 @@ describe('saveFileAs', () => {
     expect(mockedWriteTextFile).toHaveBeenCalledWith('/tmp/new.md', 'hello');
     expect(store.filePath).toBe('/tmp/new.md');
     expect(store.isDirty).toBe(false);
+  });
+
+  it('keeps the document line endings when saving to a new path', async () => {
+    const store = useEditorStore();
+    store.loadFile('a\r\nb', '/tmp/crlf.md');
+    store.updateContent('a\nb\nc');
+
+    setMockInvoke('pick_save_path', () => '/tmp/copy.md');
+    await saveFileAs(store);
+    expect(mockedWriteTextFile).toHaveBeenCalledWith('/tmp/copy.md', 'a\r\nb\r\nc');
   });
 
   it('returns false when user cancels', async () => {

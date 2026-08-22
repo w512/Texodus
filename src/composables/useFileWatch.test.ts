@@ -14,7 +14,7 @@ vi.mock('./useUnsavedPrompt', () => ({
 }));
 
 function tab(id: string, filePath: string | null): Tab {
-  return { id, filePath, content: '', isDirty: false };
+  return { id, filePath, content: '', isDirty: false, lineEnding: '\n' };
 }
 
 beforeEach(() => setActivePinia(createPinia()));
@@ -81,6 +81,49 @@ describe('useFileWatch', () => {
 
     wrapper.unmount();
     expect(unwatch).toHaveBeenCalledOnce();
+  });
+
+  // Regression for GitHub issue #7: on Windows a CRLF file was reported as
+  // "changed on disk" right after opening it. The buffer is LF (CodeMirror
+  // normalises), so a raw byte compare against the CRLF file always differed.
+  it('does not treat a CRLF file as an external change', async () => {
+    setMockFile('/docs/note.md', 'a\r\nb\r\n');
+    const { store, wrapper, emitWatchEvent } = await mountWatcher('a\r\nb\r\n', true);
+    expect(store.content).toBe('a\nb\n');
+
+    emitWatchEvent({ type: 'any', paths: ['/docs/note.md'], attrs: {} } as WatchEvent);
+    await flushPromises();
+
+    expect(promptUnsavedChanges).not.toHaveBeenCalled();
+    expect(store.content).toBe('a\nb\n');
+    expect(store.isDirty).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('follows the file when an external tool only rewrites the endings', async () => {
+    setMockFile('/docs/note.md', 'a\r\nb\r\n');
+    const { store, wrapper, emitWatchEvent } = await mountWatcher('a\nb\n', false);
+    expect(store.lineEnding).toBe('\n');
+
+    emitWatchEvent({ type: 'any', paths: ['/docs/note.md'], attrs: {} } as WatchEvent);
+    await flushPromises();
+
+    expect(store.lineEnding).toBe('\r\n');
+    expect(store.content).toBe('a\nb\n');
+    wrapper.unmount();
+  });
+
+  it('reloads a genuinely changed CRLF file with its ending intact', async () => {
+    setMockFile('/docs/note.md', 'a\r\nb\r\nc\r\n');
+    const { store, wrapper, emitWatchEvent } = await mountWatcher('a\r\nb\r\n', false);
+
+    emitWatchEvent({ type: 'any', paths: ['/docs/note.md'], attrs: {} } as WatchEvent);
+    await flushPromises();
+
+    expect(store.content).toBe('a\nb\nc\n');
+    expect(store.lineEnding).toBe('\r\n');
+    expect(store.diskContent).toBe('a\r\nb\r\nc\r\n');
+    wrapper.unmount();
   });
 
   it('prompts before replacing a dirty tab and honors Reload', async () => {

@@ -101,8 +101,11 @@ export async function saveFile(store: EditorStore): Promise<boolean> {
   try {
     if (!store.filePath) return await saveFileAs(store);
 
-    await writeTextFile(store.filePath, store.content);
-    markFileWritten(store.filePath, store.content);
+    // Written with the document's own ending; suppression records the exact
+    // bytes so the watcher recognises this write as its own echo.
+    const data = store.diskContent;
+    await writeTextFile(store.filePath, data);
+    markFileWritten(store.filePath, data);
     store.setDirty(false);
     await updateWindowTitle(store);
     showToast('File saved');
@@ -120,8 +123,9 @@ export async function saveFileAs(store: EditorStore): Promise<boolean> {
     });
     if (!path) return false;
 
-    await writeTextFile(path, store.content);
-    markFileWritten(path, store.content);
+    const data = store.diskContent;
+    await writeTextFile(path, data);
+    markFileWritten(path, data);
     store.setFilePath(path);
     store.setDirty(false);
     useSettingsStore().addRecentFile(path);

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { useEditorStore } from './editor';
+import { defaultLineEnding } from '../utils/lineEndings';
 
 beforeEach(() => {
   setActivePinia(createPinia());
@@ -205,5 +206,72 @@ describe('editor store', () => {
       store.moveTab(a, 'nonexistent');
       expect(store.tabs.map((t) => t.id)).toEqual([b, c, a]);
     });
+  });
+});
+
+// Regression: CodeMirror normalises every document to LF, so a buffer holding
+// raw CRLF is reported back as an edit the moment the view is populated — the
+// tab goes dirty on open and the file watcher then sees buffer ≠ disk and
+// raises a bogus "File changed on disk" conflict (GitHub issue #7, Windows).
+describe('line endings', () => {
+  it('loadFile keeps the buffer LF and remembers the file ending', () => {
+    const store = useEditorStore();
+    store.loadFile('# Title\r\n\r\nBody\r\n', '/docs/note.md');
+    expect(store.content).toBe('# Title\n\nBody\n');
+    expect(store.lineEnding).toBe('\r\n');
+    expect(store.isDirty).toBe(false);
+  });
+
+  it('re-applies the original ending when writing back to disk', () => {
+    const store = useEditorStore();
+    store.loadFile('a\r\nb\r\n', '/docs/note.md');
+    store.updateContent('a\nb\nc\n');
+    expect(store.diskContent).toBe('a\r\nb\r\nc\r\n');
+  });
+
+  it('leaves an LF document alone', () => {
+    const store = useEditorStore();
+    store.loadFile('a\nb\n', '/docs/note.md');
+    expect(store.lineEnding).toBe('\n');
+    expect(store.diskContent).toBe('a\nb\n');
+  });
+
+  it('does not report a phantom edit when the editor echoes a CRLF file back', () => {
+    const store = useEditorStore();
+    store.loadFile('a\r\nb\r\n', '/docs/note.md');
+    // What CodeMirror hands back from its (normalised) document.
+    store.updateContent(store.content);
+    expect(store.isDirty).toBe(false);
+  });
+
+  it('loadTabFile records the ending of the tab it targets', () => {
+    const store = useEditorStore();
+    const id = store.addTab();
+    store.loadTabFile(id, 'x\r\ny', '/docs/other.md');
+    const tab = store.tabs.find((t) => t.id === id)!;
+    expect(tab.content).toBe('x\ny');
+    expect(tab.lineEnding).toBe('\r\n');
+  });
+
+  it('addTab detects the ending of the text it is given', () => {
+    const store = useEditorStore();
+    const id = store.addTab({ content: 'x\r\ny', filePath: '/docs/other.md', isDirty: false });
+    const tab = store.tabs.find((t) => t.id === id)!;
+    expect(tab.content).toBe('x\ny');
+    expect(tab.lineEnding).toBe('\r\n');
+  });
+
+  it('duplicateTab inherits the source ending despite copying LF text', () => {
+    const store = useEditorStore();
+    store.loadFile('a\r\nb', '/docs/note.md');
+    const copy = store.duplicateTab(store.activeTabId);
+    expect(store.tabs.find((t) => t.id === copy)!.lineEnding).toBe('\r\n');
+  });
+
+  it('resets a blank tab back to the platform default', () => {
+    const store = useEditorStore();
+    store.loadFile('a\r\nb', '/docs/note.md');
+    store.reset();
+    expect(store.lineEnding).toBe(defaultLineEnding());
   });
 });

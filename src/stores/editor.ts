@@ -1,4 +1,11 @@
 import { defineStore } from 'pinia';
+import {
+  applyLineEnding,
+  defaultLineEnding,
+  detectLineEnding,
+  normalizeLineEndings,
+  type LineEnding,
+} from '../utils/lineEndings';
 
 /**
  * A single open document. The store always holds at least one tab; closing
@@ -8,9 +15,12 @@ import { defineStore } from 'pinia';
  */
 export interface Tab {
   id: string;
+  /** Always normalised to LF — see `utils/lineEndings`. */
   content: string;
   filePath: string | null;
   isDirty: boolean;
+  /** The ending this document uses on disk; re-applied by every write. */
+  lineEnding: LineEnding;
 }
 
 interface EditorState {
@@ -18,13 +28,21 @@ interface EditorState {
   activeTabId: string;
 }
 
+/**
+ * Tabs are created from raw file text, so normalisation happens here rather
+ * than at each call site — no caller can forget and let a `\r` into the buffer.
+ * An explicit `lineEnding` in `initial` wins over what the text implies (a
+ * duplicated tab keeps its source's ending even though its text is already LF).
+ */
 function createTab(initial: Partial<Tab> = {}): Tab {
+  const raw = initial.content ?? '';
   return {
     id: crypto.randomUUID(),
-    content: '',
     filePath: null,
     isDirty: false,
+    lineEnding: detectLineEnding(raw),
     ...initial,
+    content: normalizeLineEndings(raw),
   };
 }
 
@@ -58,6 +76,13 @@ export const useEditorStore = defineStore('editor', {
     isDirty(): boolean {
       return this.activeTab.isDirty;
     },
+    lineEnding(): LineEnding {
+      return this.activeTab.lineEnding;
+    },
+    /** The active document as it should be written to disk. */
+    diskContent(): string {
+      return applyLineEnding(this.activeTab.content, this.activeTab.lineEnding);
+    },
   },
   actions: {
     updateContent(newContent: string) {
@@ -76,16 +101,26 @@ export const useEditorStore = defineStore('editor', {
       const tab = this.tabs.find((t) => t.id === id);
       if (tab) tab.isDirty = dirty;
     },
+    setLineEnding(lineEnding: LineEnding) {
+      this.activeTab.lineEnding = lineEnding;
+    },
+    setTabLineEnding(id: string, lineEnding: LineEnding) {
+      const tab = this.tabs.find((t) => t.id === id);
+      if (tab) tab.lineEnding = lineEnding;
+    },
+    /** Takes the file's *raw* text: the ending is recorded, the buffer is LF. */
     loadFile(content: string, path: string | null) {
       const tab = this.activeTab;
-      tab.content = content;
+      tab.lineEnding = detectLineEnding(content);
+      tab.content = normalizeLineEndings(content);
       tab.filePath = path;
       tab.isDirty = false;
     },
     loadTabFile(id: string, content: string, path: string | null) {
       const tab = this.tabs.find((t) => t.id === id);
       if (!tab) return;
-      tab.content = content;
+      tab.lineEnding = detectLineEnding(content);
+      tab.content = normalizeLineEndings(content);
       tab.filePath = path;
       tab.isDirty = false;
     },
@@ -94,6 +129,7 @@ export const useEditorStore = defineStore('editor', {
       tab.content = '';
       tab.filePath = null;
       tab.isDirty = false;
+      tab.lineEnding = defaultLineEnding();
     },
     /**
      * Appends a new tab right after the active one and switches focus to it.
@@ -122,6 +158,7 @@ export const useEditorStore = defineStore('editor', {
       const copy = createTab({
         content: source.content,
         filePath: null,
+        lineEnding: source.lineEnding,
         // Unsaved text that exists nowhere on disk — dirty, unless it's empty
         // (a blank tab would otherwise trigger the unsaved-changes prompt).
         isDirty: source.content !== '',
@@ -148,6 +185,7 @@ export const useEditorStore = defineStore('editor', {
         tab.content = '';
         tab.filePath = null;
         tab.isDirty = false;
+        tab.lineEnding = defaultLineEnding();
         this.activeTabId = tab.id;
         return;
       }

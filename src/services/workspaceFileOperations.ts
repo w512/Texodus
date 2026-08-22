@@ -8,6 +8,8 @@ import { dirname, isSameOrInside, normalizePath, resolveLocalPath } from '../uti
 import { expandAndLoadParentDirectories, refreshWorkspaceTree } from './workspaceService';
 import { updateWindowTitle } from './fileService';
 import { showToast } from '../utils/toast';
+import { applyLineEnding } from '../utils/lineEndings';
+import { markFileWritten } from '../utils/writeSuppression';
 
 async function ensurePathDoesNotExist(path: string, ignorePath?: string): Promise<boolean> {
   // A case-only rename on a case-insensitive filesystem (macOS/Windows) resolves
@@ -63,7 +65,9 @@ async function confirmCurrentDocumentIfAffected(path: string): Promise<boolean> 
     const choice = await promptUnsavedChanges();
     if (choice === 'cancel') return false;
     if (choice === 'save') {
-      await writeTextFile(tab.filePath!, tab.content);
+      const data = applyLineEnding(tab.content, tab.lineEnding);
+      await writeTextFile(tab.filePath!, data);
+      markFileWritten(tab.filePath!, data);
       editorStore.setTabDirty(tab.id, false);
     }
   }
