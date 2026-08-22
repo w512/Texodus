@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildTableOfContents, collectHeadings, renderTableOfContentsMarkdown } from './tableOfContents';
-import { renderMarkdownToSafeHtml } from './markdownSanitizer';
+import type { Tokens } from 'marked';
+import {
+  buildTableOfContents,
+  collectHeadingAnchors,
+  collectHeadings,
+  renderTableOfContentsMarkdown,
+} from './tableOfContents';
+import { lexMarkdown, renderMarkdownToSafeHtml } from './markdownSanitizer';
 
 describe('collectHeadings', () => {
   it('collects headings in document order with their anchors', () => {
@@ -63,5 +69,23 @@ describe('generated anchors match the rendered HTML', () => {
     for (const entry of collectHeadings(doc)) {
       expect(html).toContain(`id="${entry.slug}"`);
     }
+  });
+});
+
+describe('collectHeadingAnchors', () => {
+  it('maps heading tokens to the same slugs collectHeadings produces', () => {
+    const doc = '# Title\n\n## Dup\n\n> ### Dup\n';
+    const tokens = lexMarkdown(doc);
+    const { byToken, ids } = collectHeadingAnchors(tokens);
+
+    expect([...ids]).toEqual(collectHeadings(doc).map((e) => e.slug));
+    const first = tokens.find((t) => t.type === 'heading') as Tokens.Heading;
+    expect(byToken.get(first)).toBe('title');
+  });
+
+  it('reaches headings nested in blockquotes', () => {
+    const [quote] = lexMarkdown('> ## Quoted\n') as [Tokens.Blockquote];
+    const heading = quote.tokens.find((t) => t.type === 'heading') as Tokens.Heading;
+    expect(collectHeadingAnchors([quote]).byToken.get(heading)).toBe('quoted');
   });
 });

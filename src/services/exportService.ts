@@ -1,9 +1,11 @@
 import { save, message } from "@tauri-apps/plugin-dialog";
 import { writeTextFile, writeFile, readFile } from "@tauri-apps/plugin-fs";
 import { type Token, type Tokens } from "marked";
-import type { Content, TDocumentDefinitions } from "pdfmake/interfaces";
+import type { Content, Decoration, TDocumentDefinitions } from "pdfmake/interfaces";
 import { lexMarkdown, renderFrontmatterHtml, renderMarkdownToHtml, sanitizeMarkdownHtml, splitRenderableFrontmatter } from "./markdownSanitizer";
 import { renderMermaidBlocks, renderMermaidSvg } from "./mermaidRenderer";
+import { collectHeadingAnchors, type HeadingAnchors } from "./tableOfContents";
+import { anchorFragment } from "../utils/headingSlug";
 import { dirname, hasUrlScheme, isAbsolutePath, resolveLocalPath } from "../utils/path";
 import { showToast } from "../utils/toast";
 import { applyLineEnding, defaultLineEnding } from '../utils/lineEndings';
@@ -360,12 +362,12 @@ async function preRenderImages(
  *  block-level `{ image }` content (pdfmake can't inline images into a text
  *  run). Unresolved images stay as the inline `[alt]` placeholder. When no
  *  images are present this yields a single styled text block. */
-function inlineWithImagesToContent(tokens: Token[], images: ImageMap, style?: string): Content[] {
+function inlineWithImagesToContent(tokens: Token[], images: ImageMap, anchors: HeadingAnchors, style?: string): Content[] {
   const out: Content[] = [];
   let run: Token[] = [];
   const flush = () => {
     if (run.length === 0) return;
-    const inline = inlineTokensToContent(run);
+    const inline = inlineTokensToContent(run, anchors);
     if (inline.length > 0) out.push(style ? { text: inline, style } : { text: inline });
     run = [];
   };
@@ -383,81 +385,154 @@ function inlineWithImagesToContent(tokens: Token[], images: ImageMap, style?: st
   return out.length > 0 ? out : [style ? { text: "", style } : { text: "" }];
 }
 
-function inlineTokensToContent(tokens: Token[] | undefined): Content[] {
+/**
+ * Text properties carried down to a leaf run.
+ *
+ * pdfmake flattens a node's `text` array before measuring it and **drops the
+ * properties of every nested wrapper it collapses** (`flattenTextArray` in
+ * TextInlines.js, which carries its own "TODO: Styling in nested text"). So
+ * `{ text: [{ text: "x" }], bold: true }` renders as plain "x", and the same
+ * goes for `link` and `linkToDestination` — a link nested that way produces no
+ * annotation at all, which is why table-of-contents entries were dead in the
+ * exported PDF. Only properties sitting on the leaf run survive, so inline
+ * markup is resolved into these props and applied per run rather than by
+ * nesting nodes.
+ */
+interface InlineStyle {
+  bold?: boolean;
+  italics?: boolean;
+  decoration?: Decoration | Decoration[];
+  style?: string;
+  color?: string;
+  link?: string;
+  linkToDestination?: string;
+}
+
+/** Combines decorations instead of replacing them, so a struck-through link
+ *  keeps both its line and its underline. */
+function withDecoration(style: InlineStyle, decoration: Decoration): Decoration | Decoration[] {
+  const current = style.decoration;
+  if (!current) return decoration;
+  const list = Array.isArray(current) ? current : [current];
+  return list.includes(decoration) ? current : [...list, decoration];
+}
+
+const LINK_STYLE = { color: "#2563eb", decoration: "underline" } as const satisfies { color: string; decoration: Decoration };
+
+/** Resolves a link token to the props its text should carry: a destination
+ *  jump for `#fragment`, a URL otherwise. A fragment naming no heading (a
+ *  typo, an anchor that only exists on GitHub) would be a link that goes
+ *  nowhere, so it renders as plain text. */
+function linkStyleFor(token: Tokens.Link, inherited: InlineStyle, anchors: HeadingAnchors): InlineStyle {
+  const fragment = anchorFragment(token.href ?? "");
+  if (fragment !== null) {
+    if (!anchors.ids.has(fragment)) return inherited;
+    return {
+      ...inherited,
+      linkToDestination: fragment,
+      color: LINK_STYLE.color,
+      decoration: withDecoration(inherited, LINK_STYLE.decoration),
+    };
+  }
+  return {
+    ...inherited,
+    link: token.href,
+    color: LINK_STYLE.color,
+    decoration: withDecoration(inherited, LINK_STYLE.decoration),
+  };
+}
+
+/**
+ * Renders inline tokens as a **flat** list of styled text runs — see
+ * `InlineStyle` for why nesting can't be used.
+ */
+function inlineTokensToContent(
+  tokens: Token[] | undefined,
+  anchors: HeadingAnchors,
+  inherited: InlineStyle = {},
+): Content[] {
   if (!tokens) return [];
   const out: Content[] = [];
+  const leaf = (text: string, style: InlineStyle = inherited) => out.push({ text, ...style });
+
   for (const t of tokens) {
     switch (t.type) {
       case "text": {
         const tt = t as Tokens.Text;
-        if (tt.tokens) out.push(...inlineTokensToContent(tt.tokens));
-        else out.push({ text: tt.text });
+        if (tt.tokens) out.push(...inlineTokensToContent(tt.tokens, anchors, inherited));
+        else leaf(tt.text);
         break;
       }
       case "strong":
-        out.push({ text: inlineTokensToContent((t as Tokens.Strong).tokens), bold: true });
+        out.push(...inlineTokensToContent((t as Tokens.Strong).tokens, anchors, { ...inherited, bold: true }));
         break;
       case "em":
-        out.push({ text: inlineTokensToContent((t as Tokens.Em).tokens), italics: true });
+        out.push(...inlineTokensToContent((t as Tokens.Em).tokens, anchors, { ...inherited, italics: true }));
         break;
       case "del":
-        out.push({ text: inlineTokensToContent((t as Tokens.Del).tokens), decoration: "lineThrough" });
+        out.push(...inlineTokensToContent((t as Tokens.Del).tokens, anchors, {
+          ...inherited,
+          decoration: withDecoration(inherited, "lineThrough"),
+        }));
         break;
       case "codespan":
-        out.push({ text: (t as Tokens.Codespan).text, style: "codespan" });
+        leaf((t as Tokens.Codespan).text, { ...inherited, style: "codespan" });
         break;
       case "link": {
         const lt = t as Tokens.Link;
-        out.push({ text: inlineTokensToContent(lt.tokens), link: lt.href, color: "#2563eb", decoration: "underline" });
+        out.push(...inlineTokensToContent(lt.tokens, anchors, linkStyleFor(lt, inherited, anchors)));
         break;
       }
       case "br":
-        out.push({ text: "\n" });
+        leaf("\n");
         break;
       case "escape":
-        out.push({ text: (t as Tokens.Escape).text });
+        leaf((t as Tokens.Escape).text);
         break;
       case "image": {
         const it = t as Tokens.Image;
-        out.push({ text: `[${it.text || it.href}]`, italics: true, color: "#888" });
+        leaf(`[${it.text || it.href}]`, { ...inherited, italics: true, color: "#888" });
         break;
       }
       case "html":
         break;
       default: {
         const txt = (t as { text?: string }).text;
-        if (txt) out.push({ text: txt });
+        if (txt) leaf(txt);
       }
     }
   }
   return out;
 }
 
-function blockTokensToContent(tokens: Token[], mermaidPngs: MermaidPngMap, images: ImageMap): Content[] {
+function blockTokensToContent(tokens: Token[], mermaidPngs: MermaidPngMap, images: ImageMap, anchors: HeadingAnchors): Content[] {
   const out: Content[] = [];
   for (const token of tokens) {
     switch (token.type) {
       case "heading": {
         const h = token as Tokens.Heading;
         const depth = Math.min(Math.max(h.depth, 1), 6);
-        out.push({ text: inlineTokensToContent(h.tokens), style: `h${depth}` });
+        // `id` makes the heading a named destination, which is what the
+        // in-page links above jump to.
+        const id = anchors.byToken.get(h);
+        out.push({ text: inlineTokensToContent(h.tokens, anchors), style: `h${depth}`, ...(id ? { id } : {}) });
         break;
       }
       case "paragraph": {
         const p = token as Tokens.Paragraph;
-        out.push(...inlineWithImagesToContent(p.tokens, images, "paragraph"));
+        out.push(...inlineWithImagesToContent(p.tokens, images, anchors, "paragraph"));
         break;
       }
       case "text": {
         const tt = token as Tokens.Text;
-        if (tt.tokens) out.push(...inlineWithImagesToContent(tt.tokens, images));
+        if (tt.tokens) out.push(...inlineWithImagesToContent(tt.tokens, images, anchors));
         else out.push({ text: tt.text });
         break;
       }
       case "list": {
         const l = token as Tokens.List;
         const items: Content[] = l.items.map((item) => {
-          const inner = blockTokensToContent(item.tokens, mermaidPngs, images);
+          const inner = blockTokensToContent(item.tokens, mermaidPngs, images, anchors);
           const flat: Content = inner.length === 1 ? inner[0] : { stack: inner };
           if (item.task) {
             const marker = item.checked ? "☑  " : "☐  ";
@@ -486,7 +561,7 @@ function blockTokensToContent(tokens: Token[], mermaidPngs: MermaidPngMap, image
       }
       case "blockquote": {
         const b = token as Tokens.Blockquote;
-        out.push({ stack: blockTokensToContent(b.tokens, mermaidPngs, images), style: "blockquote", margin: [12, 4, 0, 4] });
+        out.push({ stack: blockTokensToContent(b.tokens, mermaidPngs, images, anchors), style: "blockquote", margin: [12, 4, 0, 4] });
         break;
       }
       case "hr":
@@ -498,13 +573,13 @@ function blockTokensToContent(tokens: Token[], mermaidPngs: MermaidPngMap, image
       case "table": {
         const tbl = token as Tokens.Table;
         const header = tbl.header.map((cell) => ({
-          text: inlineTokensToContent(cell.tokens),
+          text: inlineTokensToContent(cell.tokens, anchors),
           style: "tableHeader",
           alignment: (cell.align ?? undefined) as "left" | "center" | "right" | undefined,
         }));
         const body = tbl.rows.map((row) =>
           row.map((cell) => ({
-            text: inlineTokensToContent(cell.tokens),
+            text: inlineTokensToContent(cell.tokens, anchors),
             alignment: (cell.align ?? undefined) as "left" | "center" | "right" | undefined,
           })),
         );
@@ -636,7 +711,7 @@ async function preRenderMermaidPngs(
   }
 }
 
-async function buildPdfDocDefinition(markdown: string, title: string, filePath: string | null): Promise<TDocumentDefinitions> {
+export async function buildPdfDocDefinition(markdown: string, title: string, filePath: string | null): Promise<TDocumentDefinitions> {
   const { frontmatterYaml, body } = splitRenderableFrontmatter(markdown);
   const tokens = lexMarkdown(body);
 
@@ -652,7 +727,8 @@ async function buildPdfDocDefinition(markdown: string, title: string, filePath: 
     await preRenderImages(imageTokens, filePath ? dirname(filePath) : "", images);
   }
 
-  const content = blockTokensToContent(tokens, mermaidPngs, images);
+  const anchors = collectHeadingAnchors(tokens);
+  const content = blockTokensToContent(tokens, mermaidPngs, images, anchors);
   if (frontmatterYaml !== null) {
     content.unshift({ text: frontmatterYaml, style: "frontmatter", preserveLeadingSpaces: true });
   }

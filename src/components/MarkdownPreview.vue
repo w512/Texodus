@@ -23,6 +23,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { dirname, hasUrlScheme, isAbsolutePath, resolveLocalPath } from '../utils/path';
 import { patchChildren, serializeNode } from '../utils/domPatch';
 import { resolveLinkTarget } from '../utils/link';
+import { anchorFragment } from '../utils/headingSlug';
 import { collectMarkdownTaskCheckboxes } from '../utils/markdownTasks';
 import { requestOpenFromPath } from '../services/fileService';
 import { showToast } from '../utils/toast';
@@ -248,8 +249,9 @@ const handleLinkClick = async (e: MouseEvent) => {
   // to the browser: the webview would otherwise push the fragment onto the
   // app's own URL. Scrolling the preview also drives the editor through the
   // usual scroll sync, so both panes end up on the heading.
-  if (href.startsWith('#')) {
-    scrollToAnchor(href.slice(1));
+  const fragment = anchorFragment(href);
+  if (fragment !== null) {
+    scrollToAnchor(fragment, href.slice(1));
     return;
   }
 
@@ -273,21 +275,15 @@ const handleLinkClick = async (e: MouseEvent) => {
   }
 };
 
-/** Scrolls the preview to the heading with this anchor id, if it exists. */
-function scrollToAnchor(rawId: string): void {
+/** Scrolls the preview to the heading with this anchor id, if it exists.
+ *  `rawId` is the undecoded fragment, tried as a fallback for a document whose
+ *  own ids happen to be percent-encoded. */
+function scrollToAnchor(id: string, rawId: string): void {
   const container = previewRef.value;
   if (!container) return;
-  if (!rawId) {
+  if (!id) {
     container.scrollTo({ top: 0, behavior: 'smooth' });
     return;
-  }
-  // Anchors written by hand (or copied from GitHub) can be percent-encoded —
-  // `#проверка` travels as `%D0%BF…` in the href but the id is decoded.
-  let id = rawId;
-  try {
-    id = decodeURIComponent(rawId);
-  } catch {
-    // Malformed escape sequence — fall back to the literal fragment.
   }
   const target = findElementById(container, id) ?? findElementById(container, rawId);
   target?.scrollIntoView({ behavior: 'smooth', block: 'start' });

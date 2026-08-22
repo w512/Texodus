@@ -74,3 +74,23 @@ export function htmlToPlainText(html: string): string {
     .replace(/<[^>]*>/g, '')
     .replace(/&(?:amp|lt|gt|quot|#39|nbsp);/g, (m) => ENTITIES[m] ?? m);
 }
+
+/**
+ * The target id of an in-page link (`#section` → `section`), percent-decoded.
+ * Returns null for links that don't point inside the document.
+ *
+ * Fragments written by hand or copied from a browser can be encoded
+ * (`#%D1%80%D0%B0%D0%B7%D0%B4%D0%B5%D0%BB`) while the anchor they name is not,
+ * so every surface that resolves one — preview scrolling, PDF destinations —
+ * has to decode first.
+ */
+export function anchorFragment(href: string): string | null {
+  if (!href.startsWith('#')) return null;
+  const raw = href.slice(1);
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    // Malformed escape sequence — the literal fragment is the best guess.
+    return raw;
+  }
+}
