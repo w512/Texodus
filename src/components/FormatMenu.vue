@@ -118,6 +118,11 @@
         <span class="label">Horizontal Rule</span>
         <span class="shortcut">⌥⌘R</span>
       </div>
+      <div class="menu-item" @click="format('table_of_contents')">
+        <span class="icon">⋮≡</span>
+        <span class="label">Table of Contents</span>
+        <span class="shortcut"></span>
+      </div>
     </div>
   </div>
 </template>

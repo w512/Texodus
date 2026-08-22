@@ -15,6 +15,8 @@
  */
 import { EditorSelection, type ChangeSpec, type Line } from '@codemirror/state';
 import type { EditorView } from '@codemirror/view';
+import { buildTableOfContents } from '../services/tableOfContents';
+import { showToast } from '../utils/toast';
 
 function wrapSelection(
   view: EditorView,
@@ -302,6 +304,36 @@ function applyLinePrefix(view: EditorView, command: LinePrefixCommand): void {
   view.focus();
 }
 
+/**
+ * Inserts a markdown list of links to every heading in the document. Not a
+ * toggle and not live: it's ordinary markdown the user owns and can edit, so
+ * running it again inserts a fresh, current list rather than rewriting the old
+ * one — the anchors it links to are the ids `markdownSanitizer` renders.
+ */
+function insertTableOfContents(view: EditorView): void {
+  const toc = buildTableOfContents(view.state.doc.toString());
+  if (!toc) {
+    showToast('No headings to build a table of contents from');
+    view.focus();
+    return;
+  }
+
+  const { from, to } = view.state.selection.main;
+  const line = view.state.doc.lineAt(from);
+  // Start on a line of its own, and leave a blank line after so the list
+  // doesn't merge into the paragraph that follows. Only the text *before* the
+  // insertion point matters — what comes after is either the replaced
+  // selection or a following line.
+  const prefix = view.state.sliceDoc(line.from, from).trim() === '' ? '' : '\n\n';
+  const insert = `${prefix}${toc}\n\n`;
+
+  view.dispatch({
+    changes: { from, to, insert },
+    selection: EditorSelection.cursor(from + insert.length),
+  });
+  view.focus();
+}
+
 export function applyFormat(format: string, view: EditorView | null): void {
   if (!view) return;
   switch (format) {
@@ -316,6 +348,7 @@ export function applyFormat(format: string, view: EditorView | null): void {
     case 'image':          wrapSelection(view, '![', '](https://)', 'image description'); break;
     case 'table':          wrapSelection(view, '\n| Column 1 | Column 2 |\n| -------- | -------- |\n| Text     | Text     |\n', '', ''); break;
     case 'horizontal_rule': wrapSelection(view, '\n\n---\n\n', '', ''); break;
+    case 'table_of_contents': insertTableOfContents(view); break;
     case 'list':           applyLinePrefix(view, { kind: 'bullet' }); break;
     case 'ordered_list':   applyLinePrefix(view, { kind: 'ordered' }); break;
     case 'task_list':      applyLinePrefix(view, { kind: 'task' }); break;

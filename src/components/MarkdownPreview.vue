@@ -240,9 +240,18 @@ const handleLinkClick = async (e: MouseEvent) => {
   const anchor = target.closest('a[href]');
   if (!anchor) return;
   const href = anchor.getAttribute('href');
-  if (!href || href.startsWith('#')) return; // allow in-page anchors
+  if (!href) return;
 
   e.preventDefault();
+
+  // In-page anchors are resolved against the preview itself rather than left
+  // to the browser: the webview would otherwise push the fragment onto the
+  // app's own URL. Scrolling the preview also drives the editor through the
+  // usual scroll sync, so both panes end up on the heading.
+  if (href.startsWith('#')) {
+    scrollToAnchor(href.slice(1));
+    return;
+  }
 
   const baseDir = editorStore.filePath ? dirname(editorStore.filePath) : '';
   const link = resolveLinkTarget(href, baseDir);
@@ -263,6 +272,36 @@ const handleLinkClick = async (e: MouseEvent) => {
       break;
   }
 };
+
+/** Scrolls the preview to the heading with this anchor id, if it exists. */
+function scrollToAnchor(rawId: string): void {
+  const container = previewRef.value;
+  if (!container) return;
+  if (!rawId) {
+    container.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  // Anchors written by hand (or copied from GitHub) can be percent-encoded —
+  // `#проверка` travels as `%D0%BF…` in the href but the id is decoded.
+  let id = rawId;
+  try {
+    id = decodeURIComponent(rawId);
+  } catch {
+    // Malformed escape sequence — fall back to the literal fragment.
+  }
+  const target = findElementById(container, id) ?? findElementById(container, rawId);
+  target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/** Matched by comparing ids rather than through a selector: anchors are
+ *  user-supplied text and building a selector out of them needs escaping that
+ *  isn't available everywhere (`CSS.escape`). */
+function findElementById(container: HTMLElement, id: string): HTMLElement | null {
+  for (const element of container.querySelectorAll<HTMLElement>('[id]')) {
+    if (element.id === id) return element;
+  }
+  return null;
+}
 
 // Opens a URL or local file path with the OS default handler.
 async function openInOs(pathOrUrl: string): Promise<void> {

@@ -355,3 +355,41 @@ describe('applyFormat over a multi-line selection', () => {
     expect(view.state.sliceDoc(from, to)).toBe('- one\n- two');
   });
 });
+describe('table of contents', () => {
+  let view: EditorView;
+  afterEach(() => destroyView(view));
+
+  it('inserts a nested list of links to the document headings', () => {
+    view = makeView('# Title\n\n## First\n\n### Nested\n\n');
+    // Cursor on the blank last line.
+    view.dispatch(view.state.update({ selection: { anchor: view.state.doc.length } }));
+    applyFormat('table_of_contents', view);
+
+    expect(view.state.doc.toString()).toBe(
+      '# Title\n\n## First\n\n### Nested\n\n'
+      + '- [Title](#title)\n  - [First](#first)\n    - [Nested](#nested)\n\n',
+    );
+  });
+
+  it('starts the list on its own line when the cursor sits in text', () => {
+    view = makeView('# Title\n\nintro');
+    view.dispatch(view.state.update({ selection: { anchor: view.state.doc.length } }));
+    applyFormat('table_of_contents', view);
+    expect(view.state.doc.toString()).toBe('# Title\n\nintro\n\n- [Title](#title)\n\n');
+  });
+
+  it('replaces the selection and leaves the cursor after the list', () => {
+    view = makeView('# Title\n\nreplace me');
+    view.dispatch(view.state.update({ selection: { anchor: 9, head: 19 } }));
+    applyFormat('table_of_contents', view);
+    expect(view.state.doc.toString()).toBe('# Title\n\n- [Title](#title)\n\n');
+    expect(view.state.selection.main.empty).toBe(true);
+    expect(view.state.selection.main.head).toBe(view.state.doc.length);
+  });
+
+  it('leaves the document untouched when there are no headings', () => {
+    view = makeView('just a paragraph');
+    applyFormat('table_of_contents', view);
+    expect(view.state.doc.toString()).toBe('just a paragraph');
+  });
+});

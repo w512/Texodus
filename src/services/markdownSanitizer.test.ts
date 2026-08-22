@@ -170,3 +170,57 @@ describe('renderFrontmatterHtml', () => {
     expect(clean).toContain('&lt;script&gt;');
   });
 });
+
+// Issue #8: marked has emitted plain `<h2>` since v7, so every `#section` link
+// — a hand-written TOC, a link copied from GitHub — pointed at nothing, in the
+// preview and in exported HTML alike.
+describe('heading anchors', () => {
+  it('gives every heading a GitHub-compatible id', async () => {
+    const html = await renderMarkdownToSafeHtml('# Example Markdown Syntax\n\n## C++ & "friends"!\n');
+    expect(html).toContain('<h1 id="example-markdown-syntax">');
+    expect(html).toContain('<h2 id="c--friends">');
+  });
+
+  it('slugs the visible text, not the inline markup', async () => {
+    const html = await renderMarkdownToSafeHtml('## **Bold** `code`\n');
+    expect(html).toContain('id="bold-code"');
+    expect(html).toContain('<strong>Bold</strong>');
+  });
+
+  it('numbers duplicate headings and restarts on the next document', async () => {
+    const first = await renderMarkdownToSafeHtml('## Dup\n\n## Dup\n');
+    expect(first).toContain('id="dup"');
+    expect(first).toContain('id="dup-1"');
+
+    // Rendering is per-document: a slugger carried over from the previous
+    // render would start this one at `dup-2` and break every anchor.
+    const second = await renderMarkdownToSafeHtml('## Dup\n');
+    expect(second).toContain('id="dup"');
+    expect(second).not.toContain('id="dup-1"');
+  });
+
+  it('assigns ids on the token path the preview uses', () => {
+    // The preview lexes and parses itself before sanitizing; the anchor rides
+    // along as data-anchor and becomes the id in the sanitizer.
+    const raw = parseMarkdownTokens(lexMarkdown('## Preview Heading\n'));
+    expect(sanitizeMarkdownHtml(raw)).toContain('id="preview-heading"');
+  });
+
+  it('keeps anchors whose name collides with a document property', async () => {
+    // DOMPurify drops `id="title"` as DOM clobbering; the renderer routes
+    // heading anchors around that so a heading named "Title" stays linkable.
+    const html = await renderMarkdownToSafeHtml('# Title\n\n## Images\n');
+    expect(html).toContain('id="title"');
+    expect(html).toContain('id="images"');
+  });
+
+  it('does not let the anchor attribute survive into the output', async () => {
+    expect(await renderMarkdownToSafeHtml('# Title\n')).not.toContain('data-anchor');
+  });
+
+  it('ignores a data-anchor smuggled in through raw HTML', () => {
+    const clean = sanitizeMarkdownHtml('<div data-anchor="x">d</div><h2 data-anchor="a b">h</h2>');
+    expect(clean).not.toContain('data-anchor');
+    expect(clean).not.toContain('id=');
+  });
+});
