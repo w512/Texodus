@@ -38,6 +38,9 @@ const queryText = ref('');
 const caseSensitive = ref(false);
 const useRegex = ref(false);
 const wholeWord = ref(false);
+const replacementText = ref('');
+const showReplace = ref(false);
+const canReplace = ref(false);
 const matchCount = ref(0);
 const currentIndex = ref(0); // 1-based; 0 = no current match
 const hasError = ref(false); // invalid regular expression
@@ -284,6 +287,7 @@ function apply(reselect: boolean): void {
   clearPreviewHighlights();
   hasError.value = false;
   const view = getEditorView();
+  canReplace.value = view !== null;
   if (!isOpen.value || !queryText.value.trim()) {
     if (view) view.dispatch({ effects: setSearchHighlights.of({ matches: [], current: -1 }) });
     forcePreviewRepaint(); // clear stale preview highlights (close / empty query)
@@ -301,6 +305,48 @@ function apply(reselect: boolean): void {
   } else {
     applyPreview(reselect);
   }
+}
+
+function replacementFor(matched: string): string {
+  if (!useRegex.value) return replacementText.value;
+  const re = makeRegex();
+  if (!re) return replacementText.value;
+  re.lastIndex = 0;
+  return matched.replace(re, replacementText.value);
+}
+
+function replaceCurrent(): void {
+  const view = getEditorView();
+  if (!view) return;
+  const match = editorMatches[currentIndex.value - 1];
+  if (!match || match.from === match.to) return;
+  const replacement = replacementFor(view.state.sliceDoc(match.from, match.to));
+  view.dispatch({
+    changes: { from: match.from, to: match.to, insert: replacement },
+    selection: { anchor: match.from + replacement.length },
+    userEvent: 'input.replace',
+  });
+  apply(true);
+}
+
+function replaceAll(): void {
+  const view = getEditorView();
+  const re = makeRegex();
+  if (!view || !re || editorMatches.length === 0) return;
+
+  const doc = view.state.doc;
+  const source = doc.toString();
+  const next = useRegex.value
+    ? source.replace(re, replacementText.value)
+    : source.replace(re, () => replacementText.value);
+  if (next === source) return;
+
+  view.dispatch({
+    changes: { from: 0, to: doc.length, insert: next },
+    selection: { anchor: 0 },
+    userEvent: 'input.replace.all',
+  });
+  apply(true);
 }
 
 function step(forward: boolean): void {
@@ -324,6 +370,11 @@ function openSearch(): void {
   apply(true);
 }
 
+function openReplace(): void {
+  showReplace.value = true;
+  openSearch();
+}
+
 function closeSearch(): void {
   isOpen.value = false;
   apply(false); // clears highlights
@@ -333,13 +384,19 @@ function closeSearch(): void {
 export function useDocumentSearch() {
   return {
     isOpen, queryText, caseSensitive, useRegex, wholeWord,
+    replacementText, showReplace, canReplace,
     matchCount, currentIndex, hasError, focusNonce,
     open: openSearch,
+    openReplace,
     close: closeSearch,
     setQuery(v: string) { queryText.value = v; apply(true); },
     setCaseSensitive(v: boolean) { caseSensitive.value = v; apply(true); },
     setRegex(v: boolean) { useRegex.value = v; apply(true); },
     setWholeWord(v: boolean) { wholeWord.value = v; apply(true); },
+    setReplacement(v: string) { replacementText.value = v; },
+    toggleReplace() { showReplace.value = !showReplace.value; },
+    replaceCurrent,
+    replaceAll,
     next() { step(true); },
     prev() { step(false); },
     /** Re-run after a document edit: refresh matches/highlight, keep selection. */

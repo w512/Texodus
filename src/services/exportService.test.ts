@@ -41,6 +41,13 @@ describe('renderExportHtml', () => {
     const html = await renderExportHtml('safe\n\n<script>alert(1)</script>', 'T');
     expect(html).not.toContain('<script>alert(1)');
   });
+
+  it('keeps rendered TeX as MathML in the exported HTML', async () => {
+    const html = await renderExportHtml('Energy: $E=mc^2$', 'Physics');
+    expect(html).toContain('<math');
+    expect(html).toContain('<msup>');
+    expect(html).not.toContain('$E=mc^2$');
+  });
 });
 
 describe('renderExportHtml — local image embedding', () => {
@@ -199,5 +206,99 @@ describe('buildPdfDocDefinition — flat inline runs', () => {
     expect(runs[0]).toMatchObject({ text: 'nowhere', bold: true });
     expect(runs[0].link).toBeUndefined();
     expect(runs[0].linkToDestination).toBeUndefined();
+  });
+});
+
+describe('buildPdfDocDefinition — TeX math', () => {
+  function walk(node: unknown, out: Record<string, unknown>[] = []): Record<string, unknown>[] {
+    if (Array.isArray(node)) {
+      for (const child of node) walk(child, out);
+      return out;
+    }
+    if (node && typeof node === 'object') {
+      const record = node as Record<string, unknown>;
+      out.push(record);
+      for (const value of Object.values(record)) walk(value, out);
+    }
+    return out;
+  }
+
+  async function mathSvgsFor(markdown: string) {
+    const def = await buildPdfDocDefinition(markdown, 'Doc', null);
+    return walk(def.content).filter((node) => typeof node.svg === 'string');
+  }
+
+  it('renders inline math as SVG instead of raw TeX', async () => {
+    const svgs = await mathSvgsFor('Energy: $E=mc^2$');
+    expect(svgs).toHaveLength(1);
+    expect(svgs[0].svg).toContain('<svg');
+    expect(Number(svgs[0].width)).toBeGreaterThan(5);
+    expect(JSON.stringify(svgs)).not.toContain('$E=mc^2$');
+  });
+
+  it('renders display math from $$ blocks', async () => {
+    const svgs = await mathSvgsFor('$$\n\\frac{a}{b}\n$$');
+    expect(svgs).toHaveLength(1);
+    expect(svgs[0].svg).toContain('<svg');
+  });
+
+  it('renders a single-dollar display block', async () => {
+    const svgs = await mathSvgsFor('$\n\\Theta(n)\n$');
+    expect(svgs).toHaveLength(1);
+    expect(svgs[0].svg).toContain('<svg');
+  });
+
+  it('renders display math containing inline math inside \\text', async () => {
+    const svgs = await mathSvgsFor(
+      '$\nC_4(n)=\\Theta(1)+\\Theta(1)+\\cdots+\\Theta(1)\n\\quad\\text{($\\Theta(n)$ termes),}\n$',
+    );
+    expect(svgs).toHaveLength(1);
+    expect(svgs[0].svg).toContain('<svg');
+  });
+
+  it('renders inline math containing inline math inside \\text', async () => {
+    const svgs = await mathSvgsFor('Count: $\\text{($\\Theta(n)$ termes)}$');
+    expect(svgs).toHaveLength(1);
+    expect(svgs[0].svg).toContain('<svg');
+  });
+
+  it('renders LaTeX inline delimiters', async () => {
+    const svgs = await mathSvgsFor('Euler: \\(e^{i\\pi}+1=0\\)');
+    expect(svgs).toHaveLength(1);
+    expect(svgs[0].svg).toContain('<svg');
+  });
+
+  it('renders LaTeX display delimiters', async () => {
+    const svgs = await mathSvgsFor('\\[\n\\frac{a}{b}\n\\]');
+    expect(svgs).toHaveLength(1);
+    expect(svgs[0].svg).toContain('<svg');
+  });
+
+  it('renders equation and align environments', async () => {
+    const equation = await mathSvgsFor('\\begin{equation}\nx=1\n\\end{equation}');
+    expect(equation).toHaveLength(1);
+    expect(equation[0].svg).toContain('<svg');
+
+    const align = await mathSvgsFor('\\begin{align}\na&=b\\\\\nc&=d\n\\end{align}');
+    expect(align).toHaveLength(1);
+    expect(align[0].svg).toContain('<svg');
+
+    const multline = await mathSvgsFor('\\begin{multline}\na+b+c\\\\\n=d\n\\end{multline}');
+    expect(multline).toHaveLength(1);
+    expect(multline[0].svg).toContain('<svg');
+
+    const eqnarray = await mathSvgsFor('\\begin{eqnarray}\na&=&b\\\\\nc&=&d\n\\end{eqnarray}');
+    expect(eqnarray).toHaveLength(1);
+    expect(eqnarray[0].svg).toContain('<svg');
+  });
+
+  it('keeps every formula when a paragraph has several', async () => {
+    const svgs = await mathSvgsFor('$a$ and $b$');
+    expect(svgs).toHaveLength(2);
+  });
+
+  it('renders inline formulas that wrap across lines', async () => {
+    const svgs = await mathSvgsFor('Runtime is $\\Theta(n)\n$.');
+    expect(svgs).toHaveLength(1);
   });
 });

@@ -1,43 +1,89 @@
 <template>
   <Transition name="searchbar">
     <div v-if="isOpen" class="searchbar">
-      <div class="searchbar-field" :class="{ 'has-error': hasError }">
-        <input
-          ref="inputRef"
-          type="text"
-          class="searchbar-input"
-          placeholder="Find in document…"
-          spellcheck="false"
-          :value="queryText"
-          @input="setQuery(($event.target as HTMLInputElement).value)"
-          @keydown="onKeydown"
-        />
-        <span class="searchbar-count">{{ countLabel }}</span>
-        <div class="searchbar-toggles">
+      <div class="searchbar-fields">
+        <div class="searchbar-field" :class="{ 'has-error': hasError }">
           <button
             type="button"
-            class="sb-toggle"
-            :class="{ active: caseSensitive }"
-            :aria-pressed="caseSensitive"
-            title="Match case"
-            @click="setCaseSensitive(!caseSensitive)"
-          >Aa</button>
+            class="sb-expand"
+            :aria-expanded="showReplace"
+            :title="showReplace ? 'Hide replace' : 'Show replace'"
+            @click="toggleReplace"
+          >{{ showReplace ? '▴' : '▾' }}</button>
+          <input
+            ref="inputRef"
+            type="text"
+            class="searchbar-input searchbar-find"
+            placeholder="Find in document…"
+            spellcheck="false"
+            :value="queryText"
+            @input="setQuery(($event.target as HTMLInputElement).value)"
+            @keydown="onKeydown"
+          />
+          <span class="searchbar-count">{{ countLabel }}</span>
+          <div class="searchbar-toggles">
+            <button
+              type="button"
+              class="sb-toggle"
+              :class="{ active: caseSensitive }"
+              :aria-pressed="caseSensitive"
+              title="Match case"
+              @click="setCaseSensitive(!caseSensitive)"
+            >Aa</button>
+            <button
+              type="button"
+              class="sb-toggle"
+              :class="{ active: wholeWord }"
+              :aria-pressed="wholeWord"
+              title="Whole word"
+              @click="setWholeWord(!wholeWord)"
+            >W</button>
+            <button
+              type="button"
+              class="sb-toggle"
+              :class="{ active: useRegex }"
+              :aria-pressed="useRegex"
+              title="Regular expression"
+              @click="setRegex(!useRegex)"
+            >.*</button>
+            <button
+              type="button"
+              class="sb-toggle sb-replace-toggle"
+              :class="{ active: showReplace }"
+              :aria-pressed="showReplace"
+              aria-label="Replace"
+              :title="showReplace ? 'Hide replace' : 'Show replace'"
+              @click="toggleReplace"
+            >⇄</button>
+          </div>
+        </div>
+
+        <div v-if="showReplace" class="searchbar-field replace-field">
+          <input
+            ref="replaceInputRef"
+            type="text"
+            class="searchbar-input searchbar-replace"
+            placeholder="Replace with…"
+            spellcheck="false"
+            :value="replacementText"
+            :disabled="!canReplace"
+            @input="setReplacement(($event.target as HTMLInputElement).value)"
+            @keydown="onReplaceKeydown"
+          />
           <button
             type="button"
-            class="sb-toggle"
-            :class="{ active: wholeWord }"
-            :aria-pressed="wholeWord"
-            title="Whole word"
-            @click="setWholeWord(!wholeWord)"
-          >W</button>
+            class="sb-btn sb-text-btn"
+            title="Replace (Enter)"
+            :disabled="!matchCount || !canReplace"
+            @click="replaceCurrent"
+          >Replace</button>
           <button
             type="button"
-            class="sb-toggle"
-            :class="{ active: useRegex }"
-            :aria-pressed="useRegex"
-            title="Regular expression"
-            @click="setRegex(!useRegex)"
-          >.*</button>
+            class="sb-btn sb-text-btn"
+            title="Replace all (Cmd/Ctrl+Enter)"
+            :disabled="!matchCount || !canReplace"
+            @click="replaceAll"
+          >All</button>
         </div>
       </div>
 
@@ -64,13 +110,16 @@ import { useEditorStore } from '../stores/editor';
 
 const {
   isOpen, queryText, caseSensitive, useRegex, wholeWord,
+  replacementText, showReplace, canReplace,
   matchCount, currentIndex, hasError, focusNonce,
   close, setQuery, setCaseSensitive, setRegex, setWholeWord, next, prev, refresh, retarget,
+  setReplacement, toggleReplace, replaceCurrent, replaceAll,
 } = useDocumentSearch();
 
 const settingsStore = useSettingsStore();
 const editorStore = useEditorStore();
 const inputRef = ref<HTMLInputElement | null>(null);
+const replaceInputRef = ref<HTMLInputElement | null>(null);
 
 const countLabel = computed(() => {
   if (!queryText.value.trim()) return '';
@@ -89,11 +138,32 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
+function onReplaceKeydown(e: KeyboardEvent) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (e.metaKey || e.ctrlKey) replaceAll();
+    else replaceCurrent();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    close();
+  }
+}
+
 // Focus + select the field whenever search is (re)opened via Cmd/Ctrl+F.
 watch(focusNonce, async () => {
   await nextTick();
-  inputRef.value?.focus();
-  inputRef.value?.select();
+  const input = showReplace.value ? replaceInputRef.value : inputRef.value;
+  input?.focus();
+  input?.select();
+});
+
+// Opening the replace row moves the caret there so typing lands in the
+// replacement field instead of the find field.
+watch(showReplace, async (visible) => {
+  if (!visible) return;
+  await nextTick();
+  replaceInputRef.value?.focus();
+  replaceInputRef.value?.select();
 });
 
 // Layout switch changes which pane the search targets (and whether the editor
@@ -115,28 +185,51 @@ watch(() => [editorStore.content, editorStore.activeTabId], () => {
 <style scoped>
 .searchbar {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 0.5rem;
   width: 100%;
-  height: 40px;
-  padding: 0 0.75rem;
+  min-height: 40px;
+  padding: 0.35rem 0.75rem;
   background: var(--toolbar-bg);
   border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
   z-index: 15;
 }
 
+.searchbar-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1;
+  min-width: 0;
+  max-width: 560px;
+}
+
 .searchbar-field {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  flex: 1;
   min-width: 0;
-  max-width: 560px;
   padding: 0.15rem 0.4rem 0.15rem 0.6rem;
   background: var(--bg-color);
   border: 1px solid var(--border-color);
   border-radius: 8px;
+}
+
+.sb-expand {
+  flex-shrink: 0;
+  width: 1.15rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.sb-expand:hover {
+  color: var(--accent-color);
 }
 
 .searchbar-field.has-error {
@@ -156,6 +249,10 @@ watch(() => [editorStore.content, editorStore.activeTabId], () => {
 
 .searchbar-input:focus {
   outline: none;
+}
+
+.searchbar-input:disabled {
+  opacity: 0.55;
 }
 
 .searchbar-input::placeholder {
@@ -232,6 +329,13 @@ watch(() => [editorStore.content, editorStore.activeTabId], () => {
 .sb-btn:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.sb-text-btn {
+  width: auto;
+  padding: 0 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .sb-icon {

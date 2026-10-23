@@ -41,6 +41,8 @@ function resetSearch() {
   s.setCaseSensitive(false);
   s.setRegex(false);
   s.setWholeWord(false);
+  s.setReplacement('');
+  s.showReplace.value = false;
 }
 
 function setView(doc: string) {
@@ -211,6 +213,80 @@ describe('useDocumentSearch', () => {
       expect(s.currentIndex.value).toBe(0);
       s.prev();
       expect(s.currentIndex.value).toBe(0);
+    });
+  });
+
+  describe('replace', () => {
+    it('replaces the current match and advances to the next one', () => {
+      const view = setView('foo bar foo baz foo');
+      views.push(view);
+      const s = getSearch();
+      s.open();
+      s.setQuery('foo');
+      s.setReplacement('qux');
+
+      s.replaceCurrent();
+      expect(view.state.doc.toString()).toBe('qux bar foo baz foo');
+      expect(s.currentIndex.value).toBe(1);
+
+      s.replaceCurrent();
+      expect(view.state.doc.toString()).toBe('qux bar qux baz foo');
+    });
+
+    it('replaces every match at once', () => {
+      const view = setView('foo bar foo baz foo');
+      views.push(view);
+      const s = getSearch();
+      s.open();
+      s.setQuery('foo');
+      s.setReplacement('qux');
+
+      s.replaceAll();
+      expect(view.state.doc.toString()).toBe('qux bar qux baz qux');
+      expect(s.matchCount.value).toBe(0);
+    });
+
+    it('supports capture groups in regex replacements', () => {
+      const view = setView('John Doe');
+      views.push(view);
+      const s = getSearch();
+      s.open();
+      s.setRegex(true);
+      s.setQuery('(John) (Doe)');
+      s.setReplacement('$2, $1');
+
+      s.replaceAll();
+      expect(view.state.doc.toString()).toBe('Doe, John');
+    });
+
+    it('treats replacement dollar signs literally outside regex mode', () => {
+      const view = setView('foo');
+      views.push(view);
+      const s = getSearch();
+      s.open();
+      s.setQuery('foo');
+      s.setReplacement('$&');
+
+      s.replaceAll();
+      expect(view.state.doc.toString()).toBe('$&');
+    });
+
+    it('exposes replace only when an editor is mounted', () => {
+      const s = getSearch();
+      s.open();
+      expect(s.canReplace.value).toBe(false);
+      s.setQuery('foo');
+      s.setReplacement('bar');
+      s.replaceCurrent();
+      s.replaceAll();
+      expect(s.matchCount.value).toBe(0);
+    });
+
+    it('opens the replace row', () => {
+      const s = getSearch();
+      s.openReplace();
+      expect(s.isOpen.value).toBe(true);
+      expect(s.showReplace.value).toBe(true);
     });
   });
 

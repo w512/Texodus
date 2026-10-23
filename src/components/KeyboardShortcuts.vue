@@ -9,7 +9,12 @@ import { applyFormat } from "../composables/useFormatting";
 import { isMac } from '../utils/platform';
 
 const { getEditorView } = useMarkdownPreview();
-const { open: openSearch, isOpen: searchIsOpen, close: closeSearch } = useDocumentSearch();
+const {
+  open: openSearch,
+  openReplace,
+  isOpen: searchIsOpen,
+  close: closeSearch,
+} = useDocumentSearch();
 
 interface ShortcutKey {
   meta?: boolean;
@@ -90,6 +95,11 @@ const FIND_KEY: { mac: ShortcutKey; win: ShortcutKey } = {
   win: { ctrl: true, code: 'KeyF' },
 };
 
+const REPLACE_KEY: { mac: ShortcutKey; win: ShortcutKey } = {
+  mac: { meta: true, alt: true, code: 'KeyF' },
+  win: { ctrl: true, code: 'KeyH' },
+};
+
 const handleKeydown = (e: KeyboardEvent) => {
   // Close the search bar on Escape regardless of focus location.
   if (e.key === 'Escape' && searchIsOpen.value) {
@@ -101,6 +111,12 @@ const handleKeydown = (e: KeyboardEvent) => {
   if (modsMatch(e, isMac ? FIND_KEY.mac : FIND_KEY.win)) {
     e.preventDefault();
     openSearch();
+    return;
+  }
+
+  if (modsMatch(e, isMac ? REPLACE_KEY.mac : REPLACE_KEY.win)) {
+    e.preventDefault();
+    openReplace();
     return;
   }
 
